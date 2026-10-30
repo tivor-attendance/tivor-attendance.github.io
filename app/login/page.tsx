@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarCheck2, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { TivorLogo } from "@/components/brand";
 import { isLoggedIn, login, resetPasskey } from "@/lib/admin-auth";
 import { cn } from "@/lib/utils";
 
@@ -54,10 +55,9 @@ export default function LoginPage() {
       <div className="login-glow pointer-events-none absolute inset-0" />
       <div className="relative w-full max-w-[400px] animate-fade-up">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-fg shadow-lg shadow-black/10">
-            <CalendarCheck2 className="h-6 w-6" />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">{mode === "login" ? "Welcome back" : "Reset passkey"}</h1>
+          <TivorLogo size={56} className="animate-logo-in mb-5" />
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.25em] text-muted">Tivor Attendance</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{mode === "login" ? "Admin sign in" : "Reset passkey"}</h1>
           <p className="mt-1 text-sm text-muted">{mode === "login" ? "Enter the admin passkey to continue" : "Use your recovery code to set a new passkey"}</p>
         </div>
 
@@ -74,8 +74,8 @@ export default function LoginPage() {
                     placeholder="••••••••••" />
                 </div>
               </label>
-              {notice && !error && <p className="animate-slide-down rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{notice}</p>}
-              {error && <p className="animate-slide-down rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">{error}</p>}
+              {notice && !error && <p className="animate-slide-down rounded-xl border bg-subtle px-3 py-2 text-sm">{notice}</p>}
+              {error && <p className="animate-slide-down rounded-xl bg-fg px-3 py-2 text-sm text-white">{error}</p>}
               <button type="submit" disabled={!passkey || busy}
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-medium text-primary-fg transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50">
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />} Sign in
@@ -88,7 +88,7 @@ export default function LoginPage() {
               <Field label="Recovery code"><input value={recovery} onChange={(e) => setRecovery(e.target.value)} autoFocus className={inputCls} placeholder="XXXX-XXXX-XXXX" /></Field>
               <Field label="New passkey (6–20 digits)"><input type="password" inputMode="numeric" value={newKey} onChange={(e) => setNewKey(e.target.value)} className={inputCls} /></Field>
               <Field label="Confirm new passkey"><input type="password" inputMode="numeric" value={confirmKey} onChange={(e) => setConfirmKey(e.target.value)} className={inputCls} /></Field>
-              {error && <p className="animate-slide-down rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">{error}</p>}
+              {error && <p className="animate-slide-down rounded-xl bg-fg px-3 py-2 text-sm text-white">{error}</p>}
               <button type="submit" disabled={busy || !recovery || !newKey}
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-medium text-primary-fg transition hover:opacity-90 disabled:opacity-50">
                 <ShieldCheck className="h-4 w-4" /> Set new passkey

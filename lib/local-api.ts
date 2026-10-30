@@ -2,7 +2,8 @@
 
 // In-browser backend used for the static (GitHub Pages) build. It mirrors the REST API's
 // request/response shapes so the UI is identical in both modes. Data lives in localStorage.
-import { DEFAULT_STATUSES, ABSENT_CODE, SELECTABLE_CODES } from "./status";
+import { DEFAULT_STATUSES, ABSENT_CODE, HALF_DAY_CODE, REASON_CODES, SELECTABLE_CODES } from "./status";
+import { SEED_ABSENCES, SEED_EMPLOYEES } from "./seed-data";
 import { DEFAULT_SETTINGS } from "./settings-types";
 import { dayKind, defaultStatus, isEmployed, type CalendarContext } from "./calendar";
 import { WEEKDAYS_SHORT, eachDate, isoDate, minDate, monthDates, monthEnd, monthStart, parseISO, todayIST, weekday, type ISODate } from "./dates";
@@ -12,8 +13,8 @@ interface Rec { status: string; remarks: string | null }
 interface Holiday { id: string; date: ISODate; name: string; type: string }
 export interface LocalDb { version: 1; employees: Emp[]; records: Record<string, Record<ISODate, Rec>>; holidays: Holiday[] }
 
-const KEY = "attendance-db-v1";
-const SEED_NAMES = ["Uday Vamsi", "Dinesh", "Adhithya", "Abinaya", "Kamalam Krishnan", "Priyanka", "Pranay V", "Harshan", "Yashwanth", "John Bellarmine"];
+// v2: real office data (Sep–Nov 2026). Bumping the key discards the old sample data.
+const KEY = "tivor-attendance-v2";
 
 export class LocalApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -22,17 +23,14 @@ export class LocalApiError extends Error {
 const uid = () => (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 function seed(): LocalDb {
-  const year = parseISO(todayIST()).year;
-  return {
-    version: 1,
-    employees: SEED_NAMES.map((name, i) => ({ id: uid(), empCode: `EMP${String(i + 1).padStart(3, "0")}`, name, dateOfJoining: isoDate(year, 1, 1), dateOfExit: null, status: "ACTIVE" })),
-    records: {},
-    holidays: [
-      { id: uid(), date: isoDate(year, 1, 26), name: "Republic Day", type: "NATIONAL" },
-      { id: uid(), date: isoDate(year, 8, 15), name: "Independence Day", type: "NATIONAL" },
-      { id: uid(), date: isoDate(year, 10, 2), name: "Gandhi Jayanti", type: "NATIONAL" },
-    ],
-  };
+  const employees: Emp[] = SEED_EMPLOYEES.map((e) => ({ id: uid(), empCode: e.code, name: e.name, dateOfJoining: e.dateOfJoining, dateOfExit: null, status: "ACTIVE" }));
+  const byCode = new Map(employees.map((e) => [e.empCode, e.id]));
+  const records: LocalDb["records"] = {};
+  for (const [code, date, reason] of SEED_ABSENCES) {
+    const id = byCode.get(code);
+    if (id) (records[id] ??= {})[date] = { status: ABSENT_CODE, remarks: reason };
+  }
+  return { version: 1, employees, records, holidays: [] };
 }
 
 export function loadDb(): LocalDb {
@@ -118,12 +116,14 @@ function applyChanges(db: LocalDb, changes: Change[]) {
     const def = defaultStatus(c.date, emp, ctx);
     if (def === "H" && !c.reset) throw new LocalApiError(422, `${c.date} is a public holiday — it is always marked H.`);
     if (c.status && !(SELECTABLE_CODES as readonly string[]).includes(c.status)) throw new LocalApiError(400, "Only Present (P) or Absent (AB) can be marked");
-    if (c.status === ABSENT_CODE && !c.remarks?.trim()) throw new LocalApiError(422, `Please give a reason for ${emp.name}'s absence on ${c.date}.`);
+    if (c.status && REASON_CODES.includes(c.status) && !c.remarks?.trim()) {
+      throw new LocalApiError(422, `Please give a reason for ${emp.name}'s ${c.status === HALF_DAY_CODE ? "half day" : "absence"} on ${c.date}.`);
+    }
   }
   const applied = changes.map((c) => {
     const recs = (db.records[c.employeeId] ??= {});
     if (c.reset) delete recs[c.date];
-    else if (c.status) recs[c.date] = { status: c.status, remarks: c.status === ABSENT_CODE ? c.remarks!.trim() : null };
+    else if (c.status) recs[c.date] = { status: c.status, remarks: REASON_CODES.includes(c.status) ? c.remarks!.trim() : null };
     else if (c.remarks !== undefined && recs[c.date]) recs[c.date].remarks = c.remarks;
     const e = effective(db, byId.get(c.employeeId)!, c.date, ctx, today);
     return { employeeId: c.employeeId, date: c.date, status: e.status, source: e.source === "MANUAL" ? "MANUAL" : "AUTO", remarks: e.remarks };
@@ -138,23 +138,26 @@ function report(db: LocalDb, from: ISODate, to: ISODate, employeeId?: string) {
   const end = minDate(to, today);
   const dates = from <= end ? eachDate(from, end) : [];
   const rows = sorted(db).filter((e) => inRange(e, from, to)).map((e) => {
-    let workingDays = 0, present = 0, absent = 0, holidays = 0;
+    let workingDays = 0, present = 0, absent = 0, halfDays = 0, holidays = 0;
     for (const d of dates) {
       if (!isEmployed(d, e)) continue;
       const s = effective(db, e, d, ctx, today).status;
       if (s === "WO") continue;
       workingDays++;
       if (s === ABSENT_CODE) absent++;
+      else if (s === HALF_DAY_CODE) halfDays++;
       else present++;
       if (s === "H") holidays++;
     }
-    return { employeeId: e.id, empCode: e.empCode, name: e.name, workingDays, present, absent, holidays, percentage: workingDays ? Math.round((present / workingDays) * 1000) / 10 : null };
+    // Half day = half present.
+    const percentage = workingDays ? Math.round(((present + halfDays * 0.5) / workingDays) * 1000) / 10 : null;
+    return { employeeId: e.id, empCode: e.empCode, name: e.name, workingDays, present, absent, halfDays, holidays, percentage };
   });
   let log;
   if (employeeId) {
     const emp = db.employees.find((e) => e.id === employeeId);
     log = emp ? eachDate(from, to).filter((d) => isEmployed(d, emp)).map((d) => ({ d, e: effective(db, emp, d, ctx, today) }))
-      .filter(({ e }) => e.status === ABSENT_CODE).map(({ d, e }) => ({ date: d, status: e.status, note: e.remarks, upcoming: d > today })) : [];
+      .filter(({ e }) => REASON_CODES.includes(e.status)).map(({ d, e }) => ({ date: d, status: e.status, note: e.remarks, upcoming: d > today })) : [];
   }
   return { from, to, rows, log };
 }
@@ -184,6 +187,15 @@ export async function localApi<T>(url: string, opts: { method?: string; body?: u
     db.employees.push(emp);
     saveDb(db);
     return r(emp);
+  }
+  const em = path.match(/^\/api\/employees\/([^/]+)$/);
+  if (em && method === "DELETE") {
+    const emp = db.employees.find((e) => e.id === em[1]);
+    if (!emp) throw new LocalApiError(404, "Employee not found");
+    db.employees = db.employees.filter((e) => e.id !== emp.id);
+    delete db.records[emp.id];
+    saveDb(db);
+    return r({ ok: true, name: emp.name });
   }
   if (path === "/api/holidays" && method === "GET") {
     const year = Number(q.year) || parseISO(todayIST()).year;
@@ -224,19 +236,21 @@ export async function localApi<T>(url: string, opts: { method?: string; body?: u
 export function registerCsv(year: number, month: number): { name: string; csv: string } {
   const db = loadDb();
   const g = grid(db, year, month);
-  const header = ["Emp ID", "Name", ...g.days.map((d) => `${d.day} ${WEEKDAYS_SHORT[d.weekday]}`), "Present", "Absent", "Absence reasons"];
+  const header = ["Emp ID", "Name", ...g.days.map((d) => `${d.day} ${WEEKDAYS_SHORT[d.weekday]}`), "Present", "Half days", "Absent", "Reasons"];
   const esc = (v: string | number) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   const lines = g.rows.map((row) => {
-    let p = 0, a = 0;
+    let p = 0, a = 0, h = 0;
     const reasons: string[] = [];
     const cells = row.cells.map((c, i) => {
       const future = g.days[i].future && c.source === "NONE";
       if (!future && c.status !== "NA" && c.status !== "WO") {
-        if (c.status === ABSENT_CODE) { a++; reasons.push(`${g.days[i].day}: ${c.remarks ?? ""}`); } else p++;
+        if (c.status === ABSENT_CODE) { a++; reasons.push(`${g.days[i].day} AB: ${c.remarks ?? ""}`); }
+        else if (c.status === HALF_DAY_CODE) { h++; reasons.push(`${g.days[i].day} HD: ${c.remarks ?? ""}`); }
+        else p++;
       }
       return future || c.status === "NA" ? "" : c.status;
     });
-    return [row.empCode, row.name, ...cells, p, a, reasons.join("; ")].map(esc).join(",");
+    return [row.empCode, row.name, ...cells, p, h, a, reasons.join("; ")].map(esc).join(",");
   });
   return { name: `attendance-${year}-${String(month).padStart(2, "0")}.csv`, csv: "﻿" + [header.map(esc).join(","), ...lines].join("\r\n") };
 }

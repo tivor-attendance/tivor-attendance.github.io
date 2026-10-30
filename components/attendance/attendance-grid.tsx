@@ -13,7 +13,7 @@ import { useConfirm } from "@/components/confirm";
 import { LOCAL_MODE, api, download } from "@/lib/client";
 import { cn, fmtNum } from "@/lib/utils";
 import { MONTHS, WEEKDAYS_SHORT, formatDate, parseISO, todayIST } from "@/lib/dates";
-import { ABSENT_CODE, selectableStatuses, statusMap, type StatusDef } from "@/lib/status";
+import { ABSENT_CODE, HALF_DAY_CODE, REASON_CODES, selectableStatuses, statusMap, type StatusDef } from "@/lib/status";
 import { summarize } from "@/lib/payroll";
 import type { GridCell, GridDay, GridRow, MonthGrid } from "@/lib/attendance";
 import type { Role } from "@/lib/permissions";
@@ -23,7 +23,7 @@ type Pos = { r: number; c: number };
 type Op = { r: number; c: number; status?: string; reset?: boolean; remarks?: string | null };
 type HistoryCell = { employeeId: string; date: string; before: GridCell; after: GridCell };
 type Popover =
-  | { kind: "cell"; x: number; y: number; askReason?: boolean }
+  | { kind: "cell"; x: number; y: number; askReason?: string }
   | { kind: "column"; c: number; x: number; y: number }
   | { kind: "row"; r: number; x: number; y: number };
 
@@ -34,7 +34,7 @@ const CODE_W = 72;
 const NAME_W = 168;
 const LEFT_W = CHECK_W + CODE_W + NAME_W;
 const SUM_W = 64;
-const SUMMARY = [{ key: "present", label: "Present" }, { key: "absent", label: "Absent" }] as const;
+const SUMMARY = [{ key: "present", label: "Present" }, { key: "halfDay", label: "Half" }, { key: "absent", label: "Absent" }] as const;
 
 const sameCell = (a: GridCell, b: GridCell) => a.status === b.status && a.source === b.source && (a.remarks ?? null) === (b.remarks ?? null);
 
@@ -120,6 +120,23 @@ export function AttendanceGrid() {
     const idx = year * 12 + month - 1 + delta;
     goMonth(Math.floor(idx / 12), (idx % 12) + 1);
   };
+
+  // Keep "today" correct: if the date rolls over while the page is open, reload.
+  useEffect(() => {
+    const t = setInterval(() => { if (data && todayIST() !== data.today) void load(); }, 30_000);
+    return () => clearInterval(t);
+  }, [data, load]);
+
+  const removeEmployee = useCallback(async (row: GridRow) => {
+    if (!(await confirm({ title: `Remove ${row.name}?`, body: `${row.name} (${row.empCode}) and all of their attendance records will be deleted. This cannot be undone.`, danger: true, confirmLabel: "Remove employee" }))) return;
+    try {
+      await api(`/api/employees/${row.id}`, { method: "DELETE" });
+      toast.success(`${row.name} removed`);
+      void load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }, [confirm, load]);
 
   // ---------------------------------------------------------------- virtualization
   const virtualizer = useVirtualizer({ count: rows.length, getScrollElement: () => scrollRef.current, estimateSize: () => ROW_H, overscan: 12 });
@@ -256,7 +273,7 @@ export function AttendanceGrid() {
   }, [range, applyOps]);
 
   // ---------------------------------------------------------------- popovers
-  const openCellPopover = useCallback((p: Pos, askReason = false) => {
+  const openCellPopover = useCallback((p: Pos, askReason?: string) => {
     const el = gridRef.current?.querySelector<HTMLElement>(`[data-cell="${p.r}-${p.c}"]`);
     const rect = el?.getBoundingClientRect();
     if (!rect) return;
@@ -309,7 +326,7 @@ export function AttendanceGrid() {
     const code = shortcuts.get(e.key.toUpperCase());
     if (!code) return;
     e.preventDefault();
-    if (code === ABSENT_CODE) return openCellPopover(focus, true); // absence always needs a reason
+    if (REASON_CODES.includes(code)) return openCellPopover(focus, code); // AB / HD always need a reason
     applyToSelection({ status: code });
     if (selectedCount === 1) move(0, 1);
   };
@@ -386,8 +403,8 @@ export function AttendanceGrid() {
         <Card><EmptyState icon={<CalendarDays className="h-5 w-5" />} title="No employees yet" description="Add your first employee to start marking attendance." action={<Button onClick={() => setAddOpen(true)}><UserPlus className="h-4 w-4" />Add employee</Button>} /></Card>
       ) : (
         <>
-          <StatsRow rows={rows} days={days} defs={defs} />
-          <DayMarker rows={rows} days={days} defs={defs} canEdit={data.canEdit}
+          <StatsRow key={data.today} rows={rows} days={days} defs={defs} />
+          <DayMarker key={`${data.today}-${year}-${month}`} rows={rows} days={days} defs={defs} canEdit={data.canEdit} onRemove={removeEmployee}
             onSet={(r, c, status, reason) => applyOps([status === "__reset" ? { r, c, reset: true } : { r, c, status, remarks: reason ?? null }])} />
 
           {/* Monthly register (desktop / tablet) */}
@@ -595,34 +612,34 @@ function FloatingPanel({ x, y, onClose, children }: { x: number; y: number; onCl
   return <div ref={ref} className="fixed z-50 w-[300px] rounded-2xl border bg-card p-3 shadow-2xl" style={pos}>{children}</div>;
 }
 
-function ReasonForm({ initial, onSubmit, onBack }: { initial?: string | null; onSubmit: (reason: string) => void; onBack: () => void }) {
+function ReasonForm({ code, initial, onSubmit, onBack }: { code: string; initial?: string | null; onSubmit: (reason: string) => void; onBack: () => void }) {
   const [reason, setReason] = useState(initial ?? "");
   const ok = reason.trim().length >= 2;
+  const half = code === HALF_DAY_CODE;
   return (
     <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (ok) onSubmit(reason.trim()); }}>
-      <p className="text-sm font-medium">Reason for absence</p>
+      <p className="text-sm font-medium">{half ? "Reason for half day" : "Reason for absence"}</p>
       <Textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500}
-        placeholder="e.g. Fever, family function, no information"
+        placeholder={half ? "e.g. Left early for appointment" : "e.g. Fever, exam, personal work"}
         className="min-h-16 text-sm"
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (ok) onSubmit(reason.trim()); } }} />
       <div className="flex gap-1.5">
-        <Button type="button" size="sm" variant="ghost" onClick={onBack}>Back</Button>
-        <Button type="submit" size="sm" variant="danger" className="flex-1" disabled={!ok}>Mark Absent (AB)</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onBack}>Cancel</Button>
+        <Button type="submit" size="sm" className="flex-1" disabled={!ok}>Mark {half ? "Half Day (HD)" : "Absent (AB)"}</Button>
       </div>
     </form>
   );
 }
 
-function CellPanel({ title, subtitle, statuses, current, remarks, disabled, askReason, onPick, onReset, onRemarks }: {
-  title: string; subtitle?: string; statuses: StatusDef[]; current: string | null; remarks?: string | null; disabled?: boolean; askReason?: boolean;
-  onPick: (code: string, reason?: string) => void; onReset: () => void; onRemarks?: (text: string) => void;
+function CellPanel({ title, subtitle, statuses, current, remarks, disabled, askReason, onPick, onReset }: {
+  title: string; subtitle?: string; statuses: StatusDef[]; current: string | null; remarks?: string | null; disabled?: boolean; askReason?: string;
+  onPick: (code: string, reason?: string) => void; onReset: () => void;
 }) {
-  const [text, setText] = useState(remarks ?? "");
-  const [asking, setAsking] = useState(Boolean(askReason));
+  const [asking, setAsking] = useState<string | null>(askReason ?? null);
   if (asking && !disabled) return (
-    <div className="space-y-3">
+    <div className="space-y-3 animate-fade-up">
       <p className="text-xs text-muted">{title}</p>
-      <ReasonForm initial={current === ABSENT_CODE ? remarks : ""} onSubmit={(r) => onPick(ABSENT_CODE, r)} onBack={() => setAsking(false)} />
+      <ReasonForm code={asking} initial={current === asking ? remarks : ""} onSubmit={(r) => onPick(asking, r)} onBack={() => setAsking(null)} />
     </div>
   );
   return (
@@ -633,27 +650,19 @@ function CellPanel({ title, subtitle, statuses, current, remarks, disabled, askR
       </div>
       {!disabled && (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            {statuses.map((s) => (
-              <button key={s.code} onClick={() => (s.code === ABSENT_CODE ? setAsking(true) : onPick(s.code))} title={`${s.label}${s.shortcut ? ` (${s.shortcut})` : ""}`}
-                className={cn("chip flex h-12 flex-col items-center justify-center rounded-xl font-semibold transition hover:scale-[1.03]", current === s.code && "ring-2 ring-accent ring-offset-1 ring-offset-card")}
-                style={{ background: s.bg, color: s.fg }}>
+          <div className="grid grid-cols-3 gap-2">
+            {statuses.map((s, i) => (
+              <button key={s.code} style={{ animationDelay: `${i * 40}ms` }} onClick={() => (REASON_CODES.includes(s.code) ? setAsking(s.code) : onPick(s.code))}
+                title={`${s.label}${s.shortcut ? ` (${s.shortcut})` : ""}`}
+                className={cn("animate-fade-up flex h-14 flex-col items-center justify-center rounded-xl border font-semibold transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-95",
+                  current === s.code ? "border-fg bg-fg text-white" : "bg-card text-fg hover:border-fg/30")}>
                 <span className="text-sm">{s.code}</span>
-                <span className="text-[10px] font-normal opacity-80">{s.label}</span>
+                <span className={cn("text-[10px] font-normal", current === s.code ? "text-white/70" : "text-muted")}>{s.label}</span>
               </button>
             ))}
           </div>
-          {current === ABSENT_CODE && remarks && <p className="rounded-xl bg-subtle px-3 py-2 text-xs"><span className="text-muted">Reason:</span> {remarks}</p>}
-          <Button variant="outline" size="sm" className="w-full" onClick={onReset}><RotateCcw className="h-3.5 w-3.5" />Reset to default</Button>
-          {onRemarks && remarks !== undefined && (
-            <div className="space-y-1.5 border-t pt-3">
-              <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Remark (e.g. Doctor appointment)" className="min-h-14 text-xs" maxLength={500} />
-              <div className="flex gap-1.5">
-                <Button size="sm" className="flex-1" onClick={() => onRemarks(text.trim())}>Save remark</Button>
-                {remarks && <Button size="sm" variant="ghost" onClick={() => onRemarks("")}><X className="h-3.5 w-3.5" /></Button>}
-              </div>
-            </div>
-          )}
+          {current && REASON_CODES.includes(current) && remarks && <p className="rounded-lg bg-subtle px-3 py-2 text-xs"><span className="text-muted">Reason:</span> {remarks}</p>}
+          <Button variant="outline" size="sm" className="w-full" onClick={onReset}><RotateCcw className="h-3.5 w-3.5" />Reset to Present</Button>
         </>
       )}
     </div>
@@ -668,18 +677,15 @@ function BulkBar({ count, days, statuses, onApply, onClear }: {
   const [to, setTo] = useState(todayIdx);
   const [status, setStatus] = useState(statuses[0]?.code ?? "P");
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-accent/30 bg-accent-soft px-4 py-2.5 text-sm">
-      <span className="font-medium text-accent-fg">{count} selected</span>
-      <span className="text-muted">Apply</span>
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-subtle px-4 py-2.5 text-sm">
+      <span className="font-medium">{count} selected</span>
       <Select value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 w-40">
         {statuses.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.label}</option>)}
         <option value="__reset">Reset to default</option>
       </Select>
-      <span className="text-muted">from</span>
       <Select value={from} onChange={(e) => { const v = Number(e.target.value); setFrom(v); if (v > to) setTo(v); }} className="h-8 w-24">
         {days.map((d, i) => <option key={d.date} value={i}>{d.day} {WEEKDAYS_SHORT[d.weekday]}</option>)}
       </Select>
-      <span className="text-muted">to</span>
       <Select value={to} onChange={(e) => setTo(Number(e.target.value))} className="h-8 w-24">
         {days.map((d, i) => i >= from && <option key={d.date} value={i}>{d.day} {WEEKDAYS_SHORT[d.weekday]}</option>)}
       </Select>
@@ -689,52 +695,77 @@ function BulkBar({ count, days, statuses, onApply, onClear }: {
   );
 }
 
-const AVATAR_COLORS = ["#7C5CFC", "#F97316", "#10B981", "#0EA5E9", "#EC4899", "#F59E0B", "#6366F1", "#14B8A6", "#EF4444", "#8B5CF6"];
-
-function Avatar({ name, index }: { name: string; index: number }) {
+function Avatar({ name }: { name: string }) {
   const initials = name.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
-  const color = AVATAR_COLORS[index % AVATAR_COLORS.length];
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold text-white shadow-sm"
-      style={{ background: `linear-gradient(135deg, ${color}, ${color}c0)` }}>
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-800 to-zinc-950 text-[13px] font-semibold tracking-wide text-white shadow-sm ring-4 ring-zinc-100">
       {initials}
     </div>
   );
+}
+
+/** Animated number that eases from its previous value to the new one. */
+function CountUp({ value, suffix = "", decimals = 0 }: { value: number; suffix?: string; decimals?: number }) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const start = performance.now();
+    const a = from.current;
+    let raf = 0;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - start) / 700);
+      const eased = 1 - Math.pow(1 - k, 3);
+      setShown(a + (value - a) * eased);
+      if (k < 1) raf = requestAnimationFrame(tick);
+      else from.current = value;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{shown.toFixed(decimals)}{suffix}</>;
 }
 
 const isPresent = (defs: Map<string, StatusDef>, code: string) => defs.get(code)?.bucket === "present";
 
 function StatsRow({ rows, days, defs }: { rows: GridRow[]; days: GridDay[]; defs: Map<string, StatusDef> }) {
   const ti = days.findIndex((d) => d.today);
-  let presentToday = 0, absentToday = 0, present = 0, absent = 0;
+  let presentToday = 0, absentToday = 0, halfToday = 0, units = 0, worked = 0;
   rows.forEach((r) => r.cells.forEach((c, i) => {
     if (days[i].future || c.def === "NA" || days[i].kind === "weeklyOff") return;
-    const p = isPresent(defs, c.status);
-    const a = c.status === ABSENT_CODE;
-    if (p) present++;
-    if (a) absent++;
-    if (i === ti) { if (p) presentToday++; if (a) absentToday++; }
+    worked++;
+    if (isPresent(defs, c.status)) units += 1;
+    else if (c.status === HALF_DAY_CODE) units += 0.5;
+    if (i === ti) {
+      if (isPresent(defs, c.status)) presentToday++;
+      else if (c.status === ABSENT_CODE) absentToday++;
+      else if (c.status === HALF_DAY_CODE) halfToday++;
+    }
   }));
-  const pct = present + absent ? Math.round((present / (present + absent)) * 1000) / 10 : null;
+  const pct = worked ? Math.round((units / worked) * 1000) / 10 : null;
+  const [barReady, setBarReady] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setBarReady(true), 150); return () => clearTimeout(t); }, []);
   const items = [
-    { label: "Employees", value: rows.length, icon: <Users className="h-4 w-4" />, tile: "bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-300" },
-    { label: "Present today", value: ti >= 0 ? presentToday : "—", icon: <UserCheck className="h-4 w-4" />, tile: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300" },
-    { label: "Absent today", value: ti >= 0 ? absentToday : "—", icon: <UserX className="h-4 w-4" />, tile: "bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-300" },
-    { label: "Attendance this month", value: pct === null ? "—" : `${pct}%`, icon: <TrendingUp className="h-4 w-4" />, tile: "bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300", bar: pct },
+    { label: "Employees", value: rows.length, icon: <Users className="h-4 w-4" /> },
+    { label: "Present today", value: ti >= 0 ? presentToday : null, icon: <UserCheck className="h-4 w-4" /> },
+    { label: "Absent today", value: ti >= 0 ? absentToday : null, icon: <UserX className="h-4 w-4" />, sub: ti >= 0 && halfToday ? `+ ${halfToday} half day` : undefined },
+    { label: "Attendance this month", value: pct, pct: true, icon: <TrendingUp className="h-4 w-4" /> },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {items.map((it, i) => (
-        <div key={it.label} style={{ animationDelay: `${i * 60}ms` }}
-          className="animate-fade-up rounded-2xl border bg-card p-5 shadow-soft transition duration-300 hover:-translate-y-0.5 hover:shadow-md">
+        <div key={it.label} style={{ animationDelay: `${i * 70}ms` }}
+          className="group animate-fade-up rounded-2xl border bg-card p-5 shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-black/5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted">{it.label}</p>
-            <div className={cn("rounded-xl p-2", it.tile)}>{it.icon}</div>
+            <p className="text-[13px] text-muted">{it.label}</p>
+            <div className="rounded-lg border bg-subtle p-1.5 text-fg/70 transition duration-300 group-hover:rotate-6 group-hover:bg-fg group-hover:text-white">{it.icon}</div>
           </div>
-          <p className="mt-2 font-display text-3xl font-semibold tabular-nums tracking-tight">{it.value}</p>
-          {it.bar !== undefined && (
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-subtle">
-              <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-emerald-500 transition-[width] duration-700" style={{ width: `${it.bar ?? 0}%` }} />
+          <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight">
+            {it.value === null ? "—" : <CountUp value={it.value} decimals={it.pct ? 1 : 0} suffix={it.pct ? "%" : ""} />}
+          </p>
+          {it.sub && <p className="mt-0.5 text-xs text-muted">{it.sub}</p>}
+          {it.pct && (
+            <div className="mt-3 h-1 overflow-hidden rounded-full bg-subtle">
+              <div className="h-full rounded-full bg-fg transition-[width] duration-1000 ease-out" style={{ width: barReady ? `${pct ?? 0}%` : "0%" }} />
             </div>
           )}
         </div>
@@ -743,42 +774,51 @@ function StatsRow({ rows, days, defs }: { rows: GridRow[]; days: GridDay[]; defs
   );
 }
 
-function DayMarker({ rows, days, defs, canEdit, onSet }: {
-  rows: GridRow[]; days: GridDay[]; defs: Map<string, StatusDef>; canEdit: boolean; onSet: (r: number, c: number, status: string, reason?: string) => void;
+const STATUS_BUTTONS = [
+  { code: "P", label: "Present" },
+  { code: "HD", label: "Half day" },
+  { code: "AB", label: "Absent" },
+] as const;
+
+function DayMarker({ rows, days, defs, canEdit, onSet, onRemove }: {
+  rows: GridRow[]; days: GridDay[]; defs: Map<string, StatusDef>; canEdit: boolean;
+  onSet: (r: number, c: number, status: string, reason?: string) => void; onRemove: (row: GridRow) => void;
 }) {
   const todayIdx = days.findIndex((d) => d.today);
   const [c, setC] = useState(todayIdx >= 0 ? todayIdx : 0);
-  const [asking, setAsking] = useState<number | null>(null);
+  const [asking, setAsking] = useState<{ r: number; code: string } | null>(null);
   const idx = Math.min(c, days.length - 1);
   const day = days[idx];
   if (!day) return null;
   const off = day.kind === "weeklyOff";
   const holiday = day.kind === "holiday";
-  let p = 0, a = 0;
+  let p = 0, a = 0, h = 0;
   rows.forEach((r) => {
     const cell = r.cells[idx];
     if (cell.def === "NA") return;
     if (isPresent(defs, cell.status)) p++;
-    if (cell.status === ABSENT_CODE) a++;
+    else if (cell.status === ABSENT_CODE) a++;
+    else if (cell.status === HALF_DAY_CODE) h++;
   });
   const go = (i: number) => { setAsking(null); setC(Math.max(0, Math.min(days.length - 1, i))); };
 
   return (
     <Card className="mt-6 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-gradient-to-r from-accent-soft/70 via-card to-card px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
         <div>
-          <h2 className="text-lg font-semibold">Mark attendance</h2>
-          <p className="text-sm text-muted">
+          <h2 className="text-lg font-semibold tracking-tight">Mark attendance</h2>
+          <p key={day.date} className="animate-fade-up text-sm text-muted">
             {formatDate(day.date, "long")}
-            {day.today && <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-fg">Today</span>}
-            {day.future && <span className="ml-2 rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium">Upcoming</span>}
+            {day.today && <span className="ml-2 rounded-full bg-fg px-2 py-0.5 text-[11px] font-medium text-white">Today</span>}
+            {day.future && <span className="ml-2 rounded-full border px-2 py-0.5 text-[11px] font-medium">Upcoming</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
           {!off && (
-            <div className="hidden items-center gap-2 text-xs font-medium sm:flex">
-              <span key={`p${p}`} className="animate-pop rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{p} Present</span>
-              <span key={`a${a}`} className="animate-pop rounded-full bg-rose-50 px-2.5 py-1 text-rose-700 dark:bg-rose-950 dark:text-rose-300">{a} Absent</span>
+            <div className="hidden items-center gap-1.5 text-xs font-medium sm:flex">
+              <span key={`p${p}`} className="animate-pop rounded-full border bg-card px-2.5 py-1">{p} Present</span>
+              <span key={`h${h}`} className="animate-pop rounded-full bg-zinc-400 px-2.5 py-1 text-white">{h} Half day</span>
+              <span key={`a${a}`} className="animate-pop rounded-full bg-fg px-2.5 py-1 text-white">{a} Absent</span>
             </div>
           )}
           <div className="flex items-center gap-0.5 rounded-xl border bg-card p-1 shadow-sm">
@@ -793,56 +833,63 @@ function DayMarker({ rows, days, defs, canEdit, onSet }: {
       </div>
 
       {holiday && (
-        <div className="flex animate-slide-down items-center gap-2 border-b bg-orange-50/80 px-5 py-2.5 text-sm text-orange-800 dark:bg-orange-950/40 dark:text-orange-200">
+        <div className="flex animate-slide-down items-center gap-2 border-b bg-subtle px-5 py-2.5 text-sm">
           <PartyPopper className="h-4 w-4" /> <span><b>{day.holiday}</b> — public holiday. Everyone is marked <b>H</b> and counted as present.</span>
         </div>
       )}
-      {off && <div className="animate-slide-down border-b bg-subtle/60 px-5 py-2.5 text-sm text-muted">Sunday — weekly off. Nothing to mark.</div>}
+      {off && <div className="animate-slide-down border-b bg-subtle px-5 py-2.5 text-sm text-muted">Sunday — weekly off. Nothing to mark.</div>}
 
       <div key={day.date} className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((row, r) => {
           const cell = row.cells[idx];
           const na = cell.def === "NA";
-          const present = !na && cell.status === "P";
-          const absent = cell.status === ABSENT_CODE;
           const disabled = !canEdit || off || holiday || na;
+          const reasoned = REASON_CODES.includes(cell.status);
           return (
-            <div key={row.id} style={{ animationDelay: `${Math.min(r, 20) * 25}ms` }}
-              className={cn("animate-fade-up rounded-2xl border p-3 transition duration-300",
-                absent ? "border-rose-200 bg-rose-50/70 dark:border-rose-900 dark:bg-rose-950/30"
-                  : holiday ? "border-orange-100 bg-orange-50/40 dark:border-orange-950 dark:bg-orange-950/20"
-                    : "bg-card hover:-translate-y-0.5 hover:shadow-md")}>
+            <div key={row.id} style={{ animationDelay: `${Math.min(r, 20) * 30}ms` }}
+              className={cn("group/card relative animate-fade-up rounded-2xl border p-3 transition duration-300",
+                cell.status === ABSENT_CODE ? "border-zinc-900 bg-zinc-50 shadow-sm" : cell.status === HALF_DAY_CODE ? "border-zinc-400 bg-zinc-50/60" : "bg-card hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-black/5")}>
               <div className="flex items-center gap-3">
-                <Avatar name={row.name} index={r} />
+                <Avatar name={row.name} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{row.name}</p>
                   <p className="truncate text-xs text-muted">
-                    {row.empCode}
-                    {absent && <span className="text-rose-600 dark:text-rose-400"> · {cell.remarks || "No reason"}</span>}
-                    {na && " · joins later"}
+                    <span className="font-mono">{row.empCode}</span>
+                    {reasoned && <span className="text-fg"> · {cell.remarks || "No reason"}</span>}
+                    {na && " · not joined yet"}
                   </p>
                 </div>
                 {holiday && !na ? (
-                  <span className="rounded-full bg-orange-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm shadow-orange-500/30">H</span>
+                  <span className="rounded-full bg-zinc-200 px-3.5 py-1.5 text-sm font-semibold">H</span>
                 ) : (
-                  <div className={cn("flex shrink-0 rounded-full bg-subtle p-1", disabled && "opacity-50")}>
-                    <button disabled={disabled} title="Present" onClick={() => { setAsking(null); if (cell.status !== "P") onSet(r, idx, "P"); }}
-                      className={cn("h-9 min-w-12 rounded-full px-3 text-sm font-semibold transition-all duration-200 active:scale-90 disabled:cursor-not-allowed",
-                        present ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30" : "text-muted hover:bg-card hover:text-fg")}>
-                      <span key={present ? "on" : "off"} className={cn("inline-block", present && "animate-pop")}>P</span>
-                    </button>
-                    <button disabled={disabled} title="Absent" onClick={() => setAsking(asking === r ? null : r)}
-                      className={cn("h-9 min-w-12 rounded-full px-3 text-sm font-semibold transition-all duration-200 active:scale-90 disabled:cursor-not-allowed",
-                        absent ? "bg-rose-500 text-white shadow-md shadow-rose-500/30" : "text-muted hover:bg-card hover:text-fg")}>
-                      <span key={absent ? "on" : "off"} className={cn("inline-block", absent && "animate-pop")}>AB</span>
-                    </button>
+                  <div className={cn("flex shrink-0 rounded-full border bg-subtle p-0.5", disabled && "opacity-40")}>
+                    {STATUS_BUTTONS.map((b) => {
+                      const active = cell.status === b.code && !na;
+                      return (
+                        <button key={b.code} disabled={disabled} title={b.label}
+                          onClick={() => {
+                            if (REASON_CODES.includes(b.code)) setAsking(asking?.r === r && asking.code === b.code ? null : { r, code: b.code });
+                            else { setAsking(null); if (cell.status !== b.code) onSet(r, idx, b.code); }
+                          }}
+                          className={cn("relative h-8 min-w-11 rounded-full px-2.5 text-[13px] font-semibold transition-all duration-200 active:scale-90 disabled:cursor-not-allowed",
+                            active ? (b.code === "HD" ? "bg-zinc-400 text-white shadow-sm" : "bg-fg text-white shadow-md shadow-black/20") : "text-muted hover:bg-card hover:text-fg")}>
+                          <span key={active ? "on" : "off"} className={cn("inline-block", active && "animate-pop")}>{b.code}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-              {asking === r && (
+              {canEdit && (
+                <button onClick={() => onRemove(row)} title={`Remove ${row.name}`} aria-label={`Remove ${row.name}`}
+                  className="absolute -right-2 -top-2 flex h-6 w-6 scale-75 items-center justify-center rounded-full border bg-card text-muted opacity-0 shadow-sm transition duration-200 hover:bg-fg hover:text-white group-hover/card:scale-100 group-hover/card:opacity-100 focus:scale-100 focus:opacity-100">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {asking?.r === r && (
                 <div className="mt-3 animate-slide-down border-t pt-3">
-                  <ReasonForm initial={absent ? cell.remarks : ""} onBack={() => setAsking(null)}
-                    onSubmit={(reason) => { onSet(r, idx, ABSENT_CODE, reason); setAsking(null); }} />
+                  <ReasonForm code={asking.code} initial={cell.status === asking.code ? cell.remarks : ""} onBack={() => setAsking(null)}
+                    onSubmit={(reason) => { onSet(r, idx, asking.code, reason); setAsking(null); }} />
                 </div>
               )}
             </div>

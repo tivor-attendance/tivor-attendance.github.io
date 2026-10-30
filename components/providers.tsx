@@ -9,7 +9,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider refetchOnWindowFocus={false}>
       <ConfirmProvider>
         {children}
-        <Toaster position="bottom-right" richColors closeButton toastOptions={{ style: { borderRadius: 14 } }} />
+        <Toaster position="bottom-right" closeButton toastOptions={{ style: { borderRadius: 14, fontFamily: "var(--font-geist)" } }} />
       </ConfirmProvider>
     </SessionProvider>
   );

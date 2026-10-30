@@ -100,7 +100,7 @@ export function StatusChip({ def, code, className }: { def?: StatusDef; code: st
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-xl bg-subtle", className)} />;
+  return <div className={cn("shimmer rounded-xl", className)} />;
 }
 
 export function EmptyState({ icon, title, description, action }: { icon?: ReactNode; title: string; description?: string; action?: ReactNode }) {
@@ -123,9 +123,9 @@ export function Dialog({ open, onClose, title, children, footer, wide }: { open:
   }, [open, onClose]);
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-end justify-center bg-black/30 p-0 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={onClose}>
       <div role="dialog" aria-modal="true" aria-label={title}
-        className={cn("max-h-[92vh] w-full overflow-hidden rounded-t-3xl border bg-card shadow-2xl sm:rounded-3xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}
+        className={cn("max-h-[92vh] w-full animate-scale-in overflow-hidden rounded-t-2xl border bg-card shadow-2xl sm:rounded-2xl", wide ? "sm:max-w-3xl" : "sm:max-w-lg")}
         onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h2 className="text-lg font-semibold">{title}</h2>

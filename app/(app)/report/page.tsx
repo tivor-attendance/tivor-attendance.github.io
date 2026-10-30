@@ -13,15 +13,15 @@ interface Row {
   workingDays: number;
   present: number;
   absent: number;
+  halfDays: number;
   holidays: number;
   percentage: number | null;
 }
 interface LogEntry { date: string; status: string; note: string | null; upcoming: boolean }
 type Period = "month" | "year" | "custom";
 
-const pctColor = (p: number | null) =>
-  p === null ? "text-muted" : p >= 90 ? "text-emerald-700 dark:text-emerald-400" : p >= 75 ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400";
-const barColor = (p: number | null) => (p === null ? "bg-border" : p >= 90 ? "bg-emerald-500" : p >= 75 ? "bg-amber-500" : "bg-rose-500");
+const pctColor = (p: number | null) => (p === null ? "text-muted" : "text-fg");
+const barColor = (p: number | null) => (p === null ? "bg-border" : p >= 90 ? "bg-zinc-900" : p >= 75 ? "bg-zinc-500" : "bg-zinc-300");
 
 export default function ReportPage() {
   const now = parseISO(todayIST());
@@ -52,7 +52,7 @@ export default function ReportPage() {
   const workingDays = rows.reduce((m, r) => Math.max(m, r.workingDays), 0);
   const holidays = rows.reduce((m, r) => Math.max(m, r.holidays), 0);
 
-  const absences = (detail.data?.log ?? []).filter((l) => l.status === "AB");
+  const absences = (detail.data?.log ?? []).filter((l) => l.status === "AB" || l.status === "HD");
 
   const pick = (id: string) => {
     setSelected(id);
@@ -122,21 +122,23 @@ export default function ReportPage() {
                         <th className="px-6 py-3 font-medium">Employee</th>
                         <th className="px-4 py-3 text-right font-medium">Working days</th>
                         <th className="px-4 py-3 text-right font-medium">Present</th>
+                        <th className="px-4 py-3 text-right font-medium">Half days</th>
                         <th className="px-4 py-3 text-right font-medium">Absent</th>
                         <th className="px-6 py-3 font-medium">Attendance %</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((r) => (
-                        <tr key={r.employeeId} onClick={() => pick(r.employeeId)}
-                          className={cn("cursor-pointer border-b transition-colors last:border-0 hover:bg-subtle/50", selected === r.employeeId && "bg-subtle/70")}>
+                      {rows.map((r, i) => (
+                        <tr key={r.employeeId} onClick={() => pick(r.employeeId)} style={{ animationDelay: `${i * 35}ms` }}
+                          className={cn("animate-fade-up cursor-pointer border-b transition-colors last:border-0 hover:bg-subtle/60", selected === r.employeeId && "bg-subtle")}>
                           <td className="px-6 py-3.5"><span className="font-medium">{r.name}</span> <span className="ml-1 text-xs text-muted">{r.empCode}</span></td>
                           <td className="px-4 py-3.5 text-right tabular-nums">{r.workingDays}</td>
-                          <td className="px-4 py-3.5 text-right tabular-nums text-emerald-700 dark:text-emerald-400">{r.present}</td>
-                          <td className="px-4 py-3.5 text-right tabular-nums text-rose-700 dark:text-rose-400">{r.absent}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums">{r.present}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums text-muted">{r.halfDays}</td>
+                          <td className="px-4 py-3.5 text-right tabular-nums font-medium">{r.absent}</td>
                           <td className="px-6 py-3.5">
                             <div className="flex items-center gap-3">
-                              <div className="h-1.5 w-36 rounded-full bg-subtle"><div className={cn("h-1.5 rounded-full", barColor(r.percentage))} style={{ width: `${r.percentage ?? 0}%` }} /></div>
+                              <div className="h-1.5 w-36 overflow-hidden rounded-full bg-subtle"><div className={cn("bar-grow h-1.5 rounded-full", barColor(r.percentage))} style={{ width: `${r.percentage ?? 0}%` }} /></div>
                               <span className={cn("w-14 font-semibold tabular-nums", pctColor(r.percentage))}>{r.percentage === null ? "—" : `${r.percentage}%`}</span>
                             </div>
                           </td>
@@ -162,9 +164,9 @@ export default function ReportPage() {
 
         {person && (
           <Card className="overflow-hidden">
-            <div className="flex flex-col gap-6 border-b bg-gradient-to-br from-accent-soft/50 via-card to-card p-6 md:flex-row md:items-center">
+            <div className="flex flex-col gap-6 border-b p-6 md:flex-row md:items-center">
               <div className="flex items-center gap-4 md:w-72">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border bg-subtle text-sm font-semibold">
+                <div className="flex h-12 w-12 animate-scale-in items-center justify-center rounded-full bg-gradient-to-br from-zinc-800 to-zinc-950 text-sm font-semibold text-white ring-4 ring-zinc-100">
                   {person.name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase()}
                 </div>
                 <div>
@@ -172,11 +174,12 @@ export default function ReportPage() {
                   <p className="text-sm text-muted">{person.empCode}</p>
                 </div>
               </div>
-              <div className="grid flex-1 grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4">
+              <div className="grid flex-1 grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-5">
                 {[
                   { label: "Working days", value: person.workingDays },
-                  { label: "Present", value: person.present, cls: "text-emerald-700 dark:text-emerald-400" },
-                  { label: "Absent", value: person.absent, cls: "text-rose-700 dark:text-rose-400" },
+                  { label: "Present", value: person.present },
+                  { label: "Half days", value: person.halfDays },
+                  { label: "Absent", value: person.absent },
                   { label: "Attendance", value: person.percentage === null ? "—" : `${person.percentage}%`, cls: pctColor(person.percentage) },
                 ].map((m) => (
                   <div key={m.label} className="bg-card px-5 py-4">
@@ -189,22 +192,22 @@ export default function ReportPage() {
 
             <div className="p-6">
               <h3 className="mb-3 flex items-center gap-2 font-semibold">
-                Absent dates
-                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-300">{absences.length}</span>
+                Absent &amp; half-day dates
+                <span className="rounded-full bg-fg px-2 py-0.5 text-xs font-medium text-white">{absences.length}</span>
               </h3>
               {detail.loading && !detail.data ? <Skeleton className="h-24" /> : absences.length === 0 ? (
-                <p className="animate-fade-up rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted">No absences in this period 🎉</p>
+                <p className="animate-fade-up rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted">No absences or half days in this period</p>
               ) : (
                 <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {absences.map((l, i) => (
                     <li key={l.date} style={{ animationDelay: `${Math.min(i, 15) * 35}ms` }}
-                      className={cn("animate-fade-up flex gap-3 rounded-xl border border-rose-100 bg-rose-50/50 p-3 dark:border-rose-950 dark:bg-rose-950/20", l.upcoming && "opacity-70")}>
-                      <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-card text-rose-700 shadow-sm dark:text-rose-300">
+                      className={cn("animate-fade-up flex gap-3 rounded-xl border bg-card p-3 transition duration-300 hover:-translate-y-0.5 hover:shadow-md", l.upcoming && "opacity-60")}>
+                      <div className={cn("flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg text-white", l.status === "HD" ? "bg-zinc-400" : "bg-fg")}>
                         <span className="text-base font-semibold leading-none">{Number(l.date.slice(8))}</span>
                         <span className="text-[10px] uppercase">{MONTHS[Number(l.date.slice(5, 7)) - 1].slice(0, 3)}</span>
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">{WEEKDAYS_SHORT[weekday(l.date)]}, {formatDate(l.date)}{l.upcoming && <span className="ml-1.5 text-xs font-normal text-muted">(planned)</span>}</p>
+                        <p className="text-sm font-medium">{WEEKDAYS_SHORT[weekday(l.date)]}, {formatDate(l.date)} <span className="ml-1 rounded border px-1 text-[10px] font-semibold">{l.status}</span>{l.upcoming && <span className="ml-1.5 text-xs font-normal text-muted">(planned)</span>}</p>
                         <p className="text-sm text-muted">{l.note || "No reason given"}</p>
                       </div>
                     </li>
