@@ -122,7 +122,7 @@ export default function LoginPage() {
       <div className="relative w-full max-w-[400px] animate-fade-up">
         <div className="mb-8 flex flex-col items-center text-center">
           <TivorLogo size={44} className="animate-logo-in mb-4" />
-          <p className="mb-1.5 text-xs font-medium uppercase tracking-[0.2em] text-muted">Tivor – Altiq</p>
+          <p className="mb-1.5 text-xs font-medium tracking-[0.12em] text-muted">Tivor altIQ Attendance</p>
           <h1 key={title} className="animate-fade-in text-xl font-semibold">{title}</h1>
           <p key={subtitle} className="mt-1 animate-fade-in text-sm text-muted">{subtitle}</p>
         </div>

@@ -57,26 +57,46 @@ export function secondsUntilResend(): number {
 }
 
 /**
- * Creates a 6-digit code, stores only its salted hash, and emails the code to the admin
- * through FormSubmit (no server needed). The very first request makes FormSubmit send an
- * "Activate Form" email instead; after activation every request delivers the code.
+ * Web3Forms access key (public by design — it only allows sending to the email it was
+ * created for). Get one free at https://web3forms.com with pranay@altiq.one.
+ * Leave empty to fall back to FormSubmit.
  */
-export async function requestResetCode(): Promise<{ ok: true } | { ok: false; error: string; activation?: boolean }> {
-  const wait = secondsUntilResend();
-  if (wait > 0) return { ok: false, error: `Please wait ${wait}s before requesting another code.` };
+export const WEB3FORMS_ACCESS_KEY = "";
 
-  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
-  const code = String(n).padStart(6, "0");
-  const salt = crypto.getRandomValues(new Uint32Array(4)).join("-");
-  const when = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
+type SendResult = { ok: true } | { ok: false; error: string; activation?: boolean };
+const UNREACHABLE = "The email service isn't responding right now (this isn't your connection). Please try again in a few minutes.";
 
+async function sendViaWeb3Forms(code: string, when: string): Promise<SendResult> {
+  let res: Response;
+  try {
+    res = await fetch("https://api.web3forms.com/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        access_key: WEB3FORMS_ACCESS_KEY,
+        subject: `Tivor altIQ Attendance — passkey reset code ${code}`,
+        from_name: "Tivor altIQ Attendance",
+        "Reset code": code,
+        "Valid for": "10 minutes",
+        Requested: `${when} IST`,
+        Note: "Someone clicked “Forgot passkey?” on the attendance site. If this wasn't you, ignore this email — the passkey stays unchanged.",
+      }),
+    });
+  } catch {
+    return { ok: false, error: UNREACHABLE };
+  }
+  const body = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+  return body.success ? { ok: true } : { ok: false, error: body.message || "The code couldn't be sent. Please try again." };
+}
+
+async function sendViaFormSubmit(code: string, when: string): Promise<SendResult> {
   let res: Response;
   try {
     res = await fetch(`https://formsubmit.co/ajax/${RESET_EMAIL}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        _subject: `Tivor – Altiq attendance: passkey reset code ${code}`,
+        _subject: `Tivor altIQ Attendance — passkey reset code ${code}`,
         _template: "box",
         _captcha: "false",
         "Reset code": code,
@@ -86,20 +106,36 @@ export async function requestResetCode(): Promise<{ ok: true } | { ok: false; er
       }),
     });
   } catch {
-    return { ok: false, error: "Couldn't reach the email service. Check your internet connection and try again." };
+    return { ok: false, error: UNREACHABLE };
   }
+  if (res.status >= 500) return { ok: false, error: UNREACHABLE };
   const body = (await res.json().catch(() => ({}))) as { success?: string | boolean; message?: string };
-  const success = body.success === true || body.success === "true";
-  if (!success) {
-    const activation = /activat/i.test(body.message ?? "");
-    return {
-      ok: false,
-      activation,
-      error: activation
-        ? `First-time setup: an “Activate Form” email was sent to ${RESET_EMAIL_MASKED}. Open it, click Activate, then request the code again.`
-        : body.message || "The code couldn't be sent. Please try again.",
-    };
-  }
+  if (body.success === true || body.success === "true") return { ok: true };
+  const activation = /activat/i.test(body.message ?? "");
+  return {
+    ok: false,
+    activation,
+    error: activation
+      ? `First-time setup: an “Activate Form” email was sent to ${RESET_EMAIL_MASKED}. Open it, click Activate, then request the code again.`
+      : body.message || "The code couldn't be sent. Please try again.",
+  };
+}
+
+/**
+ * Creates a 6-digit code, stores only its salted hash, and emails the code to the admin.
+ * Uses Web3Forms when an access key is configured, otherwise FormSubmit.
+ */
+export async function requestResetCode(): Promise<SendResult> {
+  const wait = secondsUntilResend();
+  if (wait > 0) return { ok: false, error: `Please wait ${wait}s before requesting another code.` };
+
+  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
+  const code = String(n).padStart(6, "0");
+  const salt = crypto.getRandomValues(new Uint32Array(4)).join("-");
+  const when = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
+
+  const sent = WEB3FORMS_ACCESS_KEY ? await sendViaWeb3Forms(code, when) : await sendViaFormSubmit(code, when);
+  if (!sent.ok) return sent;
   write(OTP_KEY, JSON.stringify({ hash: await sha256(`${salt}:${code}`), salt, expires: Date.now() + OTP_TTL_MS, sentAt: Date.now(), attempts: 0 } satisfies OtpState));
   return { ok: true };
 }

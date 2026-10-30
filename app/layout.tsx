@@ -7,8 +7,8 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const mono = JetBrains_Mono({ variable: "--font-mono-face", subsets: ["latin"], weight: ["400", "500"] });
 
 export const metadata: Metadata = {
-  title: "Tivor – Altiq · Attendance",
-  description: "Tivor – Altiq team attendance: present, half day, absent and holidays.",
+  title: "Tivor altIQ Attendance",
+  description: "Tivor - altIQ team attendance: present, half day, absent, holidays and payroll.",
 };
 
 // Apply the saved theme (or the system preference) before first paint.

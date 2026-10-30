@@ -81,7 +81,10 @@ export function TopNav() {
       <div className="mx-auto flex h-14 max-w-[1320px] items-center gap-6 px-4 sm:px-6">
         <Link href="/" className="group flex shrink-0 items-center gap-2.5">
           <TivorLogo size={24} className="animate-logo-in transition-transform duration-500 group-hover:rotate-[120deg]" />
-          <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">{COMPANY}</span>
+          <span className="hidden leading-tight sm:block">
+            <span className="block text-[14px] font-semibold tracking-tight">{COMPANY}</span>
+            <span className="block text-[11px] text-muted">Attendance</span>
+          </span>
         </Link>
 
         <nav ref={navRef} className="relative flex items-center gap-1">
