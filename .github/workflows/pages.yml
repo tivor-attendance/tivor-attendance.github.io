@@ -30,6 +30,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: |
+          if [[ -z "$NEXT_PUBLIC_SUPABASE_URL" || -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]]; then
+            echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY repository variables are not set — the site will keep data only in each browser and devices will NOT sync."
+          fi
           # <owner>.github.io repos are served from the domain root; others from /<repo>
           if [[ "${{ github.event.repository.name }}" == *.github.io ]]; then export BASE_PATH=""; else export BASE_PATH="/${{ github.event.repository.name }}"; fi
           bash scripts/build-pages.sh
