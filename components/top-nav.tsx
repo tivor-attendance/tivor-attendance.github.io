@@ -16,6 +16,7 @@ const LINKS = [
   { href: "/", label: "Attendance" },
   { href: "/report", label: "Report" },
   { href: "/holidays", label: "Holidays" },
+  { href: "/payroll", label: "Payroll" },
 ];
 
 function useTheme() {

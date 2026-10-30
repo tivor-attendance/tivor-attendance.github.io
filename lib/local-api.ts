@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS } from "./settings-types";
 import { dayKind, defaultStatus, isEmployed, type CalendarContext } from "./calendar";
 import { WEEKDAYS_SHORT, eachDate, isoDate, minDate, monthDates, monthEnd, monthStart, parseISO, todayIST, weekday, type ISODate } from "./dates";
 
-interface Emp { id: string; empCode: string; name: string; dateOfJoining: ISODate; dateOfExit: ISODate | null; status: "ACTIVE" | "INACTIVE" }
+interface Emp { id: string; empCode: string; name: string; dateOfJoining: ISODate; dateOfExit: ISODate | null; status: "ACTIVE" | "INACTIVE"; monthlySalary?: number | null }
 interface Rec { status: string; remarks: string | null }
 interface Holiday { id: string; date: ISODate; name: string; type: string }
 export interface LocalDb { version: 1; employees: Emp[]; records: Record<string, Record<ISODate, Rec>>; holidays: Holiday[]; migrations?: string[] }
@@ -185,6 +185,50 @@ function report(db: LocalDb, from: ISODate, to: ISODate, employeeId?: string) {
   return { from, to, rows, log };
 }
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const EXAM_RE = /\bexam/i;
+
+/**
+ * Monthly pay from attendance.
+ *  per-day = monthly salary ÷ company working days (Mon–Sat incl. holidays; Sundays excluded)
+ *  LOP days = absences (except exam absences, which are paid) + ½ × half days
+ *  net pay  = per-day × (employed working days − LOP days)   → mid-month joiners are pro-rated
+ * Days later in the month that haven't happened yet are taken as marked (default Present).
+ */
+function payroll(db: LocalDb, year: number, month: number) {
+  const today = todayIST();
+  const ctx = ctxFor(db);
+  const from = monthStart(year, month);
+  const to = monthEnd(year, month);
+  const dates = monthDates(year, month);
+  const workingDays = dates.filter((d) => dayKind(d, ctx) !== "weeklyOff").length;
+  const rows = sorted(db).filter((e) => inRange(e, from, to)).map((e) => {
+    let employedDays = 0, present = 0, halfDays = 0, absent = 0, examPaid = 0, holidays = 0;
+    for (const d of dates) {
+      if (!isEmployed(d, e)) continue;
+      const eff = effective(db, e, d, ctx, today);
+      if (eff.status === "WO") continue;
+      employedDays++;
+      if (eff.status === ABSENT_CODE) { absent++; if (eff.remarks && EXAM_RE.test(eff.remarks)) examPaid++; }
+      else if (eff.status === HALF_DAY_CODE) halfDays++;
+      else { present++; if (eff.status === "H") holidays++; }
+    }
+    const lopDays = absent - examPaid + halfDays * 0.5;
+    const paidDays = Math.max(0, employedDays - lopDays);
+    const salary = typeof e.monthlySalary === "number" ? e.monthlySalary : null;
+    const perDay = salary !== null && workingDays ? salary / workingDays : null;
+    return {
+      employeeId: e.id, empCode: e.empCode, name: e.name, monthlySalary: salary,
+      employedDays, present, halfDays, absent, examPaid, holidays, lopDays, paidDays,
+      perDay: perDay === null ? null : round2(perDay),
+      lopDeduction: perDay === null ? null : round2(perDay * lopDays),
+      notJoinedDeduction: perDay === null ? null : round2(perDay * (workingDays - employedDays)),
+      netPay: perDay === null ? null : round2(Math.min(salary!, perDay * paidDays)),
+    };
+  });
+  return { year, month, workingDays, monthComplete: to < today, rows };
+}
+
 export async function localApi<T>(url: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const u = new URL(url, "http://local");
   const path = u.pathname;
@@ -211,6 +255,18 @@ export async function localApi<T>(url: string, opts: { method?: string; body?: u
     saveDb(db);
     return r(emp);
   }
+  const sm = path.match(/^\/api\/employees\/([^/]+)\/salary$/);
+  if (sm && method === "PUT") {
+    const emp = db.employees.find((e) => e.id === sm[1]);
+    if (!emp) throw new LocalApiError(404, "Employee not found");
+    const raw = body.monthlySalary;
+    const amount = raw === null || raw === "" || raw === undefined ? null : Number(raw);
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000)) throw new LocalApiError(400, "Enter a valid monthly amount");
+    emp.monthlySalary = amount === null ? null : round2(amount);
+    saveDb(db);
+    return r({ ok: true, monthlySalary: emp.monthlySalary });
+  }
+  if (path === "/api/payroll" && method === "GET") return r(payroll(db, Number(q.year), Number(q.month)));
   const em = path.match(/^\/api\/employees\/([^/]+)$/);
   if (em && method === "GET") {
     const emp = db.employees.find((e) => e.id === em[1]);
