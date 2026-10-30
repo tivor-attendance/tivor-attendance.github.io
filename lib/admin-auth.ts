@@ -1,7 +1,11 @@
 "use client";
 
-// Admin passkey gate. NOTE: this runs entirely in the browser (the site is hosted
-// statically), so it keeps casual visitors out but is not server-grade security.
+// Admin sign-in.
+//  • Online mode (Supabase configured): the passkey is the password of the admin account
+//    pranay@altiq.one — checked by Supabase, and "Forgot passkey?" emails a reset link.
+//  • Offline fallback: passkey hash in this browser + emailed 6-digit code.
+import { CLOUD_ENABLED, cloudHasSession, cloudSendReset, cloudSetPassword, cloudSignIn, cloudSignOut } from "./cloud";
+export { CLOUD_ENABLED };
 const PASSKEY_KEY = "attendance-passkey-hash";
 const SESSION_KEY = "attendance-session";
 const OTP_KEY = "attendance-reset-otp";
@@ -29,18 +33,34 @@ export async function checkPasskey(passkey: string): Promise<boolean> {
   return hash === (read(PASSKEY_KEY) ?? (await sha256(DEFAULT_PASSKEY)));
 }
 
-export async function login(passkey: string): Promise<boolean> {
-  if (!(await checkPasskey(passkey))) return false;
+/** Returns null on success, otherwise an error message. */
+export async function login(passkey: string): Promise<string | null> {
+  if (CLOUD_ENABLED) return cloudSignIn(passkey.trim());
+  if (!(await checkPasskey(passkey))) return "Incorrect passkey. Please try again.";
   write(SESSION_KEY, String(Date.now() + SESSION_HOURS * 3600_000));
-  return true;
+  return null;
 }
 
 export function isLoggedIn(): boolean {
+  if (CLOUD_ENABLED) return cloudHasSession();
   return Number(read(SESSION_KEY) ?? 0) > Date.now();
 }
 
 export function logout() {
+  if (CLOUD_ENABLED) cloudSignOut();
   remove(SESSION_KEY);
+}
+
+/** Online mode: email a reset link to the admin. */
+export function sendResetLink(): Promise<string | null> {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  return cloudSendReset(`${window.location.origin}${base}/login/`);
+}
+
+/** Online mode: set the new passkey with the token from the reset link. */
+export function setPasskeyFromLink(token: string, newPasskey: string): Promise<string | null> {
+  if (!/^\d{6,20}$/.test(newPasskey.trim())) return Promise.resolve("Passkey must be 6–20 digits");
+  return cloudSetPassword(token, newPasskey.trim());
 }
 
 // ------------------------------------------------------------------ Forgot passkey (email OTP)

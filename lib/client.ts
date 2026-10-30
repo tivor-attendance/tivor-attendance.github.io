@@ -52,6 +52,12 @@ export function useApi<T>(url: string | null) {
   }, [url]);
 
   useEffect(() => { void load(); }, [load]);
+  // Refresh when the shared data changed on another device.
+  useEffect(() => {
+    const on = () => void load();
+    window.addEventListener("tivor-data-changed", on);
+    return () => window.removeEventListener("tivor-data-changed", on);
+  }, [load]);
   return { data, error, loading, reload: load, setData };
 }
 

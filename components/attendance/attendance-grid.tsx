@@ -61,6 +61,8 @@ export function AttendanceGrid() {
   const [popover, setPopover] = useState<Popover | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(0);
+  const pendingRef = useRef(0);
+  pendingRef.current = pending;
   const [saveState, setSaveState] = useState<"idle" | "saved" | "error">("idle");
   const undoStack = useRef<HistoryCell[][]>([]);
   const redoStack = useRef<HistoryCell[][]>([]);
@@ -121,6 +123,13 @@ export function AttendanceGrid() {
     const idx = year * 12 + month - 1 + delta;
     goMonth(Math.floor(idx / 12), (idx % 12) + 1);
   };
+
+  // Show changes made on other devices.
+  useEffect(() => {
+    const on = () => { if (pendingRef.current === 0) void load(); };
+    window.addEventListener("tivor-data-changed", on);
+    return () => window.removeEventListener("tivor-data-changed", on);
+  }, [load]);
 
   // Keep "today" correct: if the date rolls over while the page is open, reload.
   useEffect(() => {

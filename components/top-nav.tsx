@@ -63,10 +63,10 @@ export function TopNav() {
   };
   const restore = async (file: File | undefined) => {
     if (!file) return;
-    if (!(await confirm({ title: "Restore from backup?", body: "This replaces all attendance, employees and holidays in this browser with the backup file.", danger: true, confirmLabel: "Restore" }))) return;
+    if (!(await confirm({ title: "Restore from backup?", body: "This replaces all attendance, employees, holidays and salaries with the backup file — on every device.", danger: true, confirmLabel: "Restore" }))) return;
     try {
       const { importDb } = await import("@/lib/local-api");
-      importDb(await file.text());
+      await importDb(await file.text());
       toast.success("Backup restored");
       setTimeout(() => window.location.reload(), 600);
     } catch (e) {

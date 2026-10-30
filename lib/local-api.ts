@@ -1,9 +1,12 @@
 "use client";
 
 // In-browser backend used for the static (GitHub Pages) build. It mirrors the REST API's
-// request/response shapes so the UI is identical in both modes. Data lives in localStorage.
+// request/response shapes so the UI is identical in both modes.
+// Data lives in memory + localStorage, and — when Supabase is configured — is synced to the
+// shared online `kv` table so every signed-in device sees the same data.
 import { DEFAULT_STATUSES, ABSENT_CODE, HALF_DAY_CODE, REASON_CODES, SELECTABLE_CODES } from "./status";
 import { SEED_ABSENCES, SEED_EMPLOYEES } from "./seed-data";
+import { CLOUD_ENABLED, CloudError, kvDelete, kvLoadAll, kvUpsert, type KvRow } from "./cloud";
 import { DEFAULT_SETTINGS } from "./settings-types";
 import { dayKind, defaultStatus, isEmployed, type CalendarContext } from "./calendar";
 import { WEEKDAYS_SHORT, eachDate, isoDate, minDate, monthDates, monthEnd, monthStart, parseISO, todayIST, weekday, type ISODate } from "./dates";
@@ -48,7 +51,10 @@ function applyMigrations(db: LocalDb): LocalDb {
   return db;
 }
 
+let cache: LocalDb | null = null;
+
 export function loadDb(): LocalDb {
+  if (cache) return cache;
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
@@ -56,6 +62,7 @@ export function loadDb(): LocalDb {
       if (db?.version === 1 && Array.isArray(db.employees)) {
         const before = (db.migrations ?? []).length;
         applyMigrations(db);
+        cache = db;
         if ((db.migrations ?? []).length !== before) saveDb(db);
         return db;
       }
@@ -67,10 +74,11 @@ export function loadDb(): LocalDb {
 }
 
 export function saveDb(db: LocalDb) {
+  cache = db;
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
   } catch {
-    throw new LocalApiError(507, "Could not save — browser storage is full or blocked");
+    if (!CLOUD_ENABLED) throw new LocalApiError(507, "Could not save — browser storage is full or blocked");
   }
 }
 
@@ -78,12 +86,88 @@ export function exportDb(): string {
   return JSON.stringify(loadDb(), null, 2);
 }
 
-export function importDb(json: string) {
+export async function importDb(json: string) {
   const db = JSON.parse(json) as LocalDb;
   if (db?.version !== 1 || !Array.isArray(db.employees) || typeof db.records !== "object" || !Array.isArray(db.holidays)) {
     throw new LocalApiError(400, "This is not a valid attendance backup file");
   }
+  applyMigrations(db);
   saveDb(db);
+  await flushToCloud();
+}
+
+// ------------------------------------------------------------------ Online sync (Supabase)
+// Each employee, holiday and attendance mark is its own row, so two devices editing
+// different things never overwrite each other.
+
+function toKv(db: LocalDb): Map<string, string> {
+  const m = new Map<string, string>();
+  m.set("meta", JSON.stringify({ version: db.version, migrations: db.migrations ?? [] }));
+  for (const e of db.employees) m.set(`emp:${e.id}`, JSON.stringify(e));
+  for (const h of db.holidays) m.set(`hol:${h.id}`, JSON.stringify(h));
+  for (const [empId, recs] of Object.entries(db.records)) for (const [date, rec] of Object.entries(recs)) m.set(`rec:${empId}:${date}`, JSON.stringify(rec));
+  return m;
+}
+
+function fromKv(rows: KvRow[]): LocalDb {
+  const db: LocalDb = { version: 1, employees: [], records: {}, holidays: [], migrations: [] };
+  for (const { key, value } of rows) {
+    if (key === "meta") db.migrations = (value as { migrations?: string[] }).migrations ?? [];
+    else if (key.startsWith("emp:")) db.employees.push(value as Emp);
+    else if (key.startsWith("hol:")) db.holidays.push(value as Holiday);
+    else if (key.startsWith("rec:")) {
+      const [, empId, date] = key.split(":");
+      (db.records[empId] ??= {})[date] = value as Rec;
+    }
+  }
+  return db;
+}
+
+/** Order-independent snapshot of the data, used to detect real changes. */
+const fingerprint = (db: LocalDb) => [...toKv(db)].map(([k, v]) => `${k}=${v}`).sort().join("|");
+
+let synced = new Map<string, string>();
+let flushing: Promise<void> | null = null;
+
+/** Pushes local changes (since the last sync) to the online table. */
+export async function flushToCloud(): Promise<void> {
+  if (!CLOUD_ENABLED || !cache) return;
+  while (flushing) await flushing;
+  const now = toKv(cache);
+  const upserts: KvRow[] = [];
+  for (const [k, v] of now) if (synced.get(k) !== v) upserts.push({ key: k, value: JSON.parse(v) });
+  const deletes = [...synced.keys()].filter((k) => !now.has(k));
+  if (!upserts.length && !deletes.length) return;
+  flushing = (async () => {
+    if (upserts.length) await kvUpsert(upserts);
+    if (deletes.length) await kvDelete(deletes);
+    synced = now;
+  })();
+  try { await flushing; } finally { flushing = null; }
+}
+
+/**
+ * Loads the shared data. The very first time (empty online table) this browser's data is
+ * uploaded, so nothing already entered is lost. Returns true when the data changed.
+ */
+export async function syncFromCloud(): Promise<boolean> {
+  if (!CLOUD_ENABLED) return false;
+  while (flushing) await flushing;
+  const rows = await kvLoadAll();
+  if (!rows.length) {
+    loadDb();
+    synced = new Map();
+    await flushToCloud();
+    return false;
+  }
+  const db = fromKv(rows);
+  const before = (db.migrations ?? []).length;
+  applyMigrations(db);
+  const changed = !cache || fingerprint(cache) !== fingerprint(db);
+  synced = new Map(rows.map((r) => [r.key, JSON.stringify(r.value)]));
+  saveDb(db);
+  if ((db.migrations ?? []).length !== before) await flushToCloud();
+  return changed;
 }
 
 const ctxFor = (db: LocalDb): CalendarContext => ({
@@ -230,6 +314,21 @@ function payroll(db: LocalDb, year: number, month: number) {
 }
 
 export async function localApi<T>(url: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  const result = await route<T>(url, opts);
+  const method = opts.method ?? (opts.body !== undefined ? "POST" : "GET");
+  if (method !== "GET" && CLOUD_ENABLED) {
+    try {
+      await flushToCloud();
+    } catch (e) {
+      // Put back what the online database has, so the screen never shows unsaved data as saved.
+      await syncFromCloud().catch(() => {});
+      throw new LocalApiError(e instanceof CloudError ? e.status || 503 : 503, `Not saved — ${(e as Error).message}`);
+    }
+  }
+  return result;
+}
+
+async function route<T>(url: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const u = new URL(url, "http://local");
   const path = u.pathname;
   const q = Object.fromEntries(u.searchParams.entries());

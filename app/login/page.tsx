@@ -4,14 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, Loader2, Mail, ShieldCheck } from "lucide-react";
 import { TivorLogo } from "@/components/brand";
-import { RESET_EMAIL_MASKED, isLoggedIn, login, requestResetCode, secondsUntilResend, setNewPasskey, verifyResetCode } from "@/lib/admin-auth";
+import { CLOUD_ENABLED, RESET_EMAIL_MASKED, isLoggedIn, login, requestResetCode, secondsUntilResend, sendResetLink, setNewPasskey, setPasskeyFromLink, verifyResetCode } from "@/lib/admin-auth";
 import { cn } from "@/lib/utils";
 
-type Step = "login" | "send" | "code" | "new";
+type Step = "login" | "send" | "sent" | "code" | "new";
 
 const HEADINGS: Record<Step, [string, string]> = {
   login: ["Admin sign in", "Enter the admin passkey to continue"],
-  send: ["Forgot passkey?", "We'll email a 6-digit code to the admin"],
+  send: ["Forgot passkey?", CLOUD_ENABLED ? "We'll email a reset link to the admin" : "We'll email a 6-digit code to the admin"],
+  sent: ["Check your email", `Open the reset link sent to ${RESET_EMAIL_MASKED}`],
   code: ["Check your email", `Enter the 6-digit code sent to ${RESET_EMAIL_MASKED}`],
   new: ["Set a new passkey", "Choose a passkey of 6–20 digits"],
 };
@@ -29,8 +30,30 @@ export default function LoginPage() {
   const [shake, setShake] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const boxes = useRef<(HTMLInputElement | null)[]>([]);
+  const [recoveryToken, setRecoveryToken] = useState<string | null>(null);
 
-  useEffect(() => { if (isLoggedIn()) router.replace("/"); }, [router]);
+  useEffect(() => {
+    // Arriving from the emailed reset link: #access_token=…&type=recovery
+    const readHash = () => {
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      if (hash.get("type") === "recovery" && hash.get("access_token")) {
+        setRecoveryToken(hash.get("access_token"));
+        setStep("new");
+        setError(null);
+        history.replaceState(null, "", window.location.pathname);
+        return true;
+      }
+      if (hash.get("error_description")) {
+        setError(hash.get("error_description")!.replace(/\+/g, " "));
+        history.replaceState(null, "", window.location.pathname);
+      }
+      return false;
+    };
+    if (!readHash() && isLoggedIn()) router.replace("/");
+    const onHash = () => void readHash();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [router]);
   useEffect(() => {
     if (step !== "code") return;
     setResendIn(secondsUntilResend());
@@ -49,13 +72,21 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const ok = await login(passkey);
+    const err = await login(passkey);
     setBusy(false);
-    if (ok) router.replace("/");
-    else fail("Incorrect passkey. Please try again.");
+    if (!err) router.replace("/");
+    else fail(err);
   };
 
   const sendCode = async () => {
+    if (CLOUD_ENABLED) {
+      setBusy(true);
+      setError(null);
+      const err = await sendResetLink();
+      setBusy(false);
+      if (err) return fail(err);
+      return go("sent");
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -104,7 +135,7 @@ export default function LoginPage() {
     e.preventDefault();
     if (newKey !== confirmKey) return fail("The two passkeys do not match");
     setBusy(true);
-    const err = await setNewPasskey(newKey);
+    const err = recoveryToken ? await setPasskeyFromLink(recoveryToken, newKey) : await setNewPasskey(newKey);
     setBusy(false);
     if (err) return fail(err);
     setPasskey("");
@@ -131,7 +162,7 @@ export default function LoginPage() {
           {step !== "login" && (
             <div className="mb-5 flex items-center gap-1.5">
               {(["send", "code", "new"] as Step[]).map((s, i) => (
-                <span key={s} className={cn("h-1 flex-1 rounded-full transition-colors duration-500", ["send", "code", "new"].indexOf(step) >= i ? "bg-fg" : "bg-border")} />
+                <span key={s} className={cn("h-1 flex-1 rounded-full transition-colors duration-500", ["send", "code", "new"].indexOf(step === "sent" ? "code" : step) >= i ? "bg-fg" : "bg-border")} />
               ))}
             </div>
           )}
@@ -167,8 +198,22 @@ export default function LoginPage() {
               </div>
               {notice && <p className="animate-slide-down st st-HD rounded-lg px-3 py-2 text-[13px]">{notice}</p>}
               {error && <p className="animate-slide-down st st-AB rounded-lg px-3 py-2 text-[13px]">{error}</p>}
-              <PrimaryButton type="button" onClick={sendCode} disabled={busy} busy={busy}>Send 6-digit code</PrimaryButton>
+              <PrimaryButton type="button" onClick={sendCode} disabled={busy} busy={busy}>{CLOUD_ENABLED ? "Email me a reset link" : "Send 6-digit code"}</PrimaryButton>
               <BackLink onClick={() => { go("login"); setNotice(null); }} />
+            </div>
+          )}
+
+          {step === "sent" && (
+            <div className="space-y-4 animate-fade-in" key="sent">
+              <div className="flex items-start gap-3 rounded-lg border bg-subtle px-3 py-3">
+                <div className="flex h-9 w-9 shrink-0 animate-pop items-center justify-center rounded-lg border bg-card"><Mail className="h-4 w-4 text-fg-2" /></div>
+                <p className="text-[13px] text-fg-2">A reset link was sent to <b>{RESET_EMAIL_MASKED}</b>. Open it on any device to choose a new passkey. The link works once and expires in 1 hour.</p>
+              </div>
+              {error && <p className="animate-slide-down st st-AB rounded-lg px-3 py-2 text-[13px]">{error}</p>}
+              <div className="flex items-center justify-between text-sm">
+                <BackLink onClick={() => go("login")} />
+                <button type="button" disabled={busy} onClick={sendCode} className="text-muted transition hover:text-fg disabled:opacity-60">Resend link</button>
+              </div>
             </div>
           )}
 
@@ -199,7 +244,7 @@ export default function LoginPage() {
 
           {step === "new" && (
             <form onSubmit={saveNew} className="space-y-4 animate-fade-in" key="new">
-              <p className="st st-P flex items-center gap-2 rounded-lg px-3 py-2 text-[13px]"><ShieldCheck className="h-4 w-4" />Code verified</p>
+              <p className="st st-P flex items-center gap-2 rounded-lg px-3 py-2 text-[13px]"><ShieldCheck className="h-4 w-4" />{recoveryToken ? "Reset link verified" : "Code verified"}</p>
               <Field label="New passkey (6–20 digits)"><input type="password" inputMode="numeric" autoFocus value={newKey} onChange={(e) => setNewKey(e.target.value)} className={inputCls} /></Field>
               <Field label="Confirm new passkey"><input type="password" inputMode="numeric" value={confirmKey} onChange={(e) => setConfirmKey(e.target.value)} className={inputCls} /></Field>
               {error && <p className="animate-slide-down st st-AB rounded-lg px-3 py-2 text-[13px]">{error}</p>}
