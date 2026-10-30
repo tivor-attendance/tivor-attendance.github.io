@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# app
+/lib/generated
+/backups
+/out
+/.pages-stash
+!.env.example

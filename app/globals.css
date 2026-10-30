@@ -1,26 +1,102 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #fafafa;
+  --card: #ffffff;
+  --fg: #17171c;
+  --muted: #6e6e7a;
+  --border: #ececef;
+  --subtle: #f3f3f6;
+  --accent: #7c5cfc;
+  --accent-soft: #f1edff;
+  --accent-fg: #5b3fd9;
+  --primary: #111114;
+  --primary-fg: #ffffff;
+  --danger: #dc2626;
+  --shadow: 0 1px 2px rgb(16 16 24 / 0.04);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0c0c11;
+  --card: #15151d;
+  --fg: #ececf1;
+  --muted: #9a9aab;
+  --border: #262634;
+  --subtle: #1c1c26;
+  --accent: #9b82ff;
+  --accent-soft: #241d45;
+  --accent-fg: #c3b5ff;
+  --primary: #f4f4f6;
+  --primary-fg: #111114;
+  --danger: #f87171;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), var(--font-inter), ui-sans-serif, sans-serif;
+  --shadow-soft: var(--shadow);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+* {
+  border-color: var(--border);
+}
+
+/* Status chips render with configured colors; dim them slightly in dark mode. */
+.dark .chip {
+  filter: saturate(0.9) brightness(0.85);
+}
+
+.scrollbar-thin::-webkit-scrollbar { width: 10px; height: 10px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; border: 2px solid var(--card); }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Motion ---------- */
+@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes slide-down { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(0.85); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@keyframes glow { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.06); } }
+
+.animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.animate-slide-down { animation: slide-down 0.25s ease-out both; }
+.animate-pop { animation: pop 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.animate-shake { animation: shake 0.4s ease-in-out; }
+
+.login-glow {
+  background:
+    radial-gradient(600px 300px at 50% 0%, rgb(124 92 252 / 0.14), transparent 70%),
+    radial-gradient(500px 260px at 85% 100%, rgb(14 165 233 / 0.10), transparent 70%);
+  animation: glow 8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-slide-down, .animate-pop, .animate-shake, .login-glow { animation: none; }
 }

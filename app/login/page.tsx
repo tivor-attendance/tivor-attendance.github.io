@@ -1,0 +1,111 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CalendarCheck2, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { isLoggedIn, login, resetPasskey } from "@/lib/admin-auth";
+import { cn } from "@/lib/utils";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [passkey, setPasskey] = useState("");
+  const [recovery, setRecovery] = useState("");
+  const [newKey, setNewKey] = useState("");
+  const [confirmKey, setConfirmKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  useEffect(() => { if (isLoggedIn()) router.replace("/"); }, [router]);
+
+  const fail = (msg: string) => {
+    setError(msg);
+    setShake(true);
+    setTimeout(() => setShake(false), 450);
+  };
+
+  const submitLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const ok = await login(passkey);
+    setBusy(false);
+    if (ok) router.replace("/");
+    else fail("Incorrect passkey. Please try again.");
+  };
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newKey !== confirmKey) return fail("The two passkeys do not match");
+    setBusy(true);
+    const err = await resetPasskey(recovery, newKey);
+    setBusy(false);
+    if (err) return fail(err);
+    setMode("login");
+    setPasskey("");
+    setError(null);
+    setNotice("Passkey updated. Sign in with your new passkey.");
+  };
+
+  return (
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg px-4">
+      <div className="login-glow pointer-events-none absolute inset-0" />
+      <div className="relative w-full max-w-[400px] animate-fade-up">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-fg shadow-lg shadow-black/10">
+            <CalendarCheck2 className="h-6 w-6" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">{mode === "login" ? "Welcome back" : "Reset passkey"}</h1>
+          <p className="mt-1 text-sm text-muted">{mode === "login" ? "Enter the admin passkey to continue" : "Use your recovery code to set a new passkey"}</p>
+        </div>
+
+        <div className={cn("rounded-2xl border bg-card p-6 shadow-xl shadow-black/[0.04]", shake && "animate-shake")}>
+          {mode === "login" ? (
+            <form onSubmit={submitLogin} className="space-y-4" key="login">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted">Admin passkey</span>
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                  <input type="password" inputMode="numeric" autoComplete="current-password" autoFocus value={passkey}
+                    onChange={(e) => { setPasskey(e.target.value); setError(null); }}
+                    className="h-11 w-full rounded-xl border bg-card pl-10 pr-3 text-base tracking-[0.3em] outline-none transition focus:border-fg/40 focus:ring-4 focus:ring-fg/5"
+                    placeholder="••••••••••" />
+                </div>
+              </label>
+              {notice && !error && <p className="animate-slide-down rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{notice}</p>}
+              {error && <p className="animate-slide-down rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">{error}</p>}
+              <button type="submit" disabled={!passkey || busy}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-medium text-primary-fg transition hover:opacity-90 active:scale-[0.99] disabled:opacity-50">
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Sign in
+              </button>
+              <button type="button" onClick={() => { setMode("forgot"); setError(null); setNotice(null); }}
+                className="w-full text-center text-sm text-muted transition hover:text-fg">Forgot passkey?</button>
+            </form>
+          ) : (
+            <form onSubmit={submitReset} className="space-y-4 animate-fade-up" key="forgot">
+              <Field label="Recovery code"><input value={recovery} onChange={(e) => setRecovery(e.target.value)} autoFocus className={inputCls} placeholder="XXXX-XXXX-XXXX" /></Field>
+              <Field label="New passkey (6–20 digits)"><input type="password" inputMode="numeric" value={newKey} onChange={(e) => setNewKey(e.target.value)} className={inputCls} /></Field>
+              <Field label="Confirm new passkey"><input type="password" inputMode="numeric" value={confirmKey} onChange={(e) => setConfirmKey(e.target.value)} className={inputCls} /></Field>
+              {error && <p className="animate-slide-down rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">{error}</p>}
+              <button type="submit" disabled={busy || !recovery || !newKey}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-medium text-primary-fg transition hover:opacity-90 disabled:opacity-50">
+                <ShieldCheck className="h-4 w-4" /> Set new passkey
+              </button>
+              <button type="button" onClick={() => { setMode("login"); setError(null); }} className="flex w-full items-center justify-center gap-1.5 text-sm text-muted hover:text-fg">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+const inputCls = "h-11 w-full rounded-xl border bg-card px-3 text-sm outline-none transition focus:border-fg/40 focus:ring-4 focus:ring-fg/5";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block space-y-1.5"><span className="text-xs font-medium text-muted">{label}</span>{children}</label>;
+}

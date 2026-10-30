@@ -1,0 +1,228 @@
+// Attendance Management System — data model.
+// Attendance days are stored as Postgres DATE (no time component) and always
+// represent the calendar day in Asia/Kolkata.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  HR
+  MANAGER
+  VIEWER
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  INTERN
+  CONTRACT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum RecordSource {
+  AUTO
+  MANUAL
+}
+
+enum HolidayType {
+  NATIONAL
+  FESTIVAL
+  COMPANY
+  OPTIONAL
+}
+
+enum LeaveType {
+  CL
+  SL
+  EL
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  role               Role      @default(VIEWER)
+  active             Boolean   @default(true)
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  canViewSensitive   Boolean   @default(false) @map("can_view_sensitive")
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  attendanceUpdates AttendanceRecord[]
+  holidaysCreated   Holiday[]
+  overridesCreated  WorkingDayOverride[]
+  locksCreated      MonthLock[]          @relation("LockedBy")
+  locksReleased     MonthLock[]          @relation("UnlockedBy")
+  auditLogs         AuditLog[]
+  resetTokens       PasswordResetToken[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  empCode        String         @unique @map("emp_code")
+  name           String
+  email          String?
+  phone          String?
+  department     String?
+  designation    String?
+  managerId      String?        @map("manager_id")
+  dateOfJoining  DateTime       @map("date_of_joining") @db.Date
+  dateOfExit     DateTime?      @map("date_of_exit") @db.Date
+  dateOfBirth    DateTime?      @map("date_of_birth") @db.Date
+  employmentType EmploymentType @default(FULL_TIME) @map("employment_type")
+  status         EmployeeStatus @default(ACTIVE)
+  monthlySalary  Decimal?       @map("monthly_salary") @db.Decimal(12, 2)
+  bankAccount    String?        @map("bank_account")
+  ifsc           String?
+  pan            String?
+  uan            String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  manager       Employee?          @relation("Reporting", fields: [managerId], references: [id])
+  reports       Employee[]         @relation("Reporting")
+  attendance    AttendanceRecord[]
+  leaveBalances LeaveBalance[]
+
+  @@index([status])
+  @@index([department])
+  @@map("employees")
+}
+
+model AttendanceRecord {
+  id          String       @id @default(cuid())
+  employeeId  String       @map("employee_id")
+  date        DateTime     @db.Date
+  status      String
+  source      RecordSource @default(AUTO)
+  remarks     String?
+  updatedById String?      @map("updated_by_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  employee  Employee @relation(fields: [employeeId], references: [id])
+  updatedBy User?    @relation(fields: [updatedById], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("attendance_records")
+}
+
+model Holiday {
+  id          String      @id @default(cuid())
+  date        DateTime    @unique @db.Date
+  name        String
+  type        HolidayType @default(NATIONAL)
+  createdById String?     @map("created_by_id")
+  deletedAt   DateTime?   @map("deleted_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@map("holidays")
+}
+
+model WorkingDayOverride {
+  id          String    @id @default(cuid())
+  date        DateTime  @unique @db.Date
+  isWorking   Boolean   @map("is_working")
+  reason      String?
+  createdById String?   @map("created_by_id")
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@map("working_day_overrides")
+}
+
+model LeaveBalance {
+  id         String    @id @default(cuid())
+  employeeId String    @map("employee_id")
+  year       Int
+  leaveType  LeaveType @map("leave_type")
+  allotted   Decimal   @default(0) @db.Decimal(6, 1)
+  used       Decimal   @default(0) @db.Decimal(6, 1)
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, year, leaveType])
+  @@map("leave_balances")
+}
+
+model MonthLock {
+  id           String    @id @default(cuid())
+  year         Int
+  month        Int
+  lockedById   String    @map("locked_by_id")
+  lockedAt     DateTime  @default(now()) @map("locked_at")
+  unlockedById String?   @map("unlocked_by_id")
+  unlockedAt   DateTime? @map("unlocked_at")
+  unlockReason String?   @map("unlock_reason")
+
+  lockedBy   User  @relation("LockedBy", fields: [lockedById], references: [id])
+  unlockedBy User? @relation("UnlockedBy", fields: [unlockedById], references: [id])
+
+  @@index([year, month])
+  @@map("month_locks")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  entity    String
+  entityId  String?  @map("entity_id")
+  action    String
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
