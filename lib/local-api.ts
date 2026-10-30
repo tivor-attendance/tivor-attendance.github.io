@@ -11,7 +11,7 @@ import { WEEKDAYS_SHORT, eachDate, isoDate, minDate, monthDates, monthEnd, month
 interface Emp { id: string; empCode: string; name: string; dateOfJoining: ISODate; dateOfExit: ISODate | null; status: "ACTIVE" | "INACTIVE" }
 interface Rec { status: string; remarks: string | null }
 interface Holiday { id: string; date: ISODate; name: string; type: string }
-export interface LocalDb { version: 1; employees: Emp[]; records: Record<string, Record<ISODate, Rec>>; holidays: Holiday[] }
+export interface LocalDb { version: 1; employees: Emp[]; records: Record<string, Record<ISODate, Rec>>; holidays: Holiday[]; migrations?: string[] }
 
 // v2: real office data (Sep–Nov 2026). Bumping the key discards the old sample data.
 const KEY = "tivor-attendance-v2";
@@ -30,7 +30,22 @@ function seed(): LocalDb {
     const id = byCode.get(code);
     if (id) (records[id] ??= {})[date] = { status: ABSENT_CODE, remarks: reason };
   }
-  return { version: 1, employees, records, holidays: [] };
+  return applyMigrations({ version: 1, employees, records, holidays: [] });
+}
+
+/** One-time data changes that must also reach browsers which already have data. */
+function applyMigrations(db: LocalDb): LocalDb {
+  const done = new Set(db.migrations ?? []);
+  if (!done.has("add-vishal-sundaram")) {
+    // Not in the office sheet yet: joins today by default; the admin can edit the joining date.
+    if (!db.employees.some((e) => e.name.toLowerCase() === "vishal sundaram")) {
+      const max = db.employees.reduce((m, e) => Math.max(m, Number(e.empCode.replace(/\D/g, "")) || 0), 0);
+      db.employees.push({ id: uid(), empCode: `EMP${String(max + 1).padStart(3, "0")}`, name: "Vishal Sundaram", dateOfJoining: "2026-10-30", dateOfExit: null, status: "ACTIVE" });
+    }
+    done.add("add-vishal-sundaram");
+  }
+  db.migrations = [...done];
+  return db;
 }
 
 export function loadDb(): LocalDb {
@@ -38,7 +53,12 @@ export function loadDb(): LocalDb {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const db = JSON.parse(raw) as LocalDb;
-      if (db?.version === 1 && Array.isArray(db.employees)) return db;
+      if (db?.version === 1 && Array.isArray(db.employees)) {
+        const before = (db.migrations ?? []).length;
+        applyMigrations(db);
+        if ((db.migrations ?? []).length !== before) saveDb(db);
+        return db;
+      }
     }
   } catch { /* fall through to seed */ }
   const db = seed();
@@ -138,11 +158,13 @@ function report(db: LocalDb, from: ISODate, to: ISODate, employeeId?: string) {
   const end = minDate(to, today);
   const dates = from <= end ? eachDate(from, end) : [];
   const rows = sorted(db).filter((e) => inRange(e, from, to)).map((e) => {
-    let workingDays = 0, present = 0, absent = 0, halfDays = 0, holidays = 0;
+    let workingDays = 0, present = 0, absent = 0, halfDays = 0, holidays = 0, examPaid = 0;
     for (const d of dates) {
       if (!isEmployed(d, e)) continue;
-      const s = effective(db, e, d, ctx, today).status;
+      const eff = effective(db, e, d, ctx, today);
+      const s = eff.status;
       if (s === "WO") continue;
+      if (s === ABSENT_CODE && eff.remarks && /\bexam/i.test(eff.remarks)) examPaid++;
       workingDays++;
       if (s === ABSENT_CODE) absent++;
       else if (s === HALF_DAY_CODE) halfDays++;
@@ -151,7 +173,8 @@ function report(db: LocalDb, from: ISODate, to: ISODate, employeeId?: string) {
     }
     // Half day = half present.
     const percentage = workingDays ? Math.round(((present + halfDays * 0.5) / workingDays) * 1000) / 10 : null;
-    return { employeeId: e.id, empCode: e.empCode, name: e.name, workingDays, present, absent, halfDays, holidays, percentage };
+    // Exam absences are paid (no loss of pay); payroll itself is handled later.
+    return { employeeId: e.id, empCode: e.empCode, name: e.name, workingDays, present, absent, halfDays, holidays, examPaid, percentage };
   });
   let log;
   if (employeeId) {
@@ -189,6 +212,26 @@ export async function localApi<T>(url: string, opts: { method?: string; body?: u
     return r(emp);
   }
   const em = path.match(/^\/api\/employees\/([^/]+)$/);
+  if (em && method === "GET") {
+    const emp = db.employees.find((e) => e.id === em[1]);
+    if (!emp) throw new LocalApiError(404, "Employee not found");
+    return r(emp);
+  }
+  if (em && method === "PUT") {
+    const emp = db.employees.find((e) => e.id === em[1]);
+    if (!emp) throw new LocalApiError(404, "Employee not found");
+    const name = String(body.name ?? "").trim();
+    const doj = String(body.dateOfJoining ?? "");
+    if (!name) throw new LocalApiError(400, "Name is required");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(doj)) throw new LocalApiError(400, "Enter a valid joining date");
+    emp.name = name;
+    emp.dateOfJoining = doj;
+    // Marks before the joining date no longer apply.
+    const recs = db.records[emp.id] ?? {};
+    for (const d of Object.keys(recs)) if (d < doj) delete recs[d];
+    saveDb(db);
+    return r(emp);
+  }
   if (em && method === "DELETE") {
     const emp = db.employees.find((e) => e.id === em[1]);
     if (!emp) throw new LocalApiError(404, "Employee not found");

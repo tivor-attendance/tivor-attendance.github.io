@@ -47,13 +47,13 @@ export default function HolidaysPage() {
 
   const today = todayIST();
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Holidays</h1>
-        <p className="mt-1.5 text-sm text-muted">Public holidays are marked <b className="text-fg">H</b> for everyone and counted as present — even if P or AB was marked that day.</p>
+        <h1 className="text-xl font-semibold">Holidays</h1>
+        <p className="mt-1 text-sm text-muted">Public holidays are marked <span className="st st-H rounded px-1 text-xs font-semibold">H</span> for everyone and counted as present, even if P, HD or AB was marked that day.</p>
       </div>
 
-      <Card className="p-5">
+      <Card className="animate-fade-up p-4">
         <form onSubmit={add} className="flex flex-wrap items-end gap-3">
           <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
           <Field label="Holiday name" className="min-w-56 flex-1"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Diwali" /></Field>
@@ -61,10 +61,10 @@ export default function HolidaysPage() {
         </form>
       </Card>
 
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b p-4">
-          <h3 className="font-semibold">Holidays in {year}</h3>
-          <Select value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-28 rounded-full">
+      <Card className="animate-fade-up overflow-hidden">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h3 className="text-sm font-semibold">Holidays in {year}</h3>
+          <Select value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24 text-[13px]">
             {Array.from({ length: 6 }, (_, i) => parseISO(today).year - 3 + i).map((y) => <option key={y}>{y}</option>)}
           </Select>
         </div>
@@ -76,14 +76,14 @@ export default function HolidaysPage() {
                   const { day, month } = parseISO(h.date);
                   const past = h.date < today;
                   return (
-                    <li key={h.id} className="flex items-center gap-4 px-5 py-3.5">
-                      <div className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border ${past ? "bg-subtle text-muted" : "bg-card text-fg"}`}>
-                        <span className="text-lg font-semibold leading-none">{day}</span>
+                    <li key={h.id} className="group flex animate-fade-up items-center gap-3 px-4 py-3 transition-colors hover:bg-subtle/60">
+                      <div className={`st flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg ${past ? "st-WO" : "st-H"}`}>
+                        <span className="text-sm font-semibold leading-none">{day}</span>
                         <span className="text-[10px] uppercase">{new Date(Date.UTC(2000, month - 1, 1)).toLocaleString("en", { month: "short", timeZone: "UTC" })}</span>
                       </div>
                       <div className="flex-1">
-                        <p className="font-medium">{h.name}</p>
-                        <p className="text-sm text-muted">{WEEKDAYS_SHORT[weekday(h.date)]} · {past ? "Done" : "Upcoming"}</p>
+                        <p className="text-[13px] font-medium">{h.name}</p>
+                        <p className="text-xs text-muted">{WEEKDAYS_SHORT[weekday(h.date)]} · {past ? "Done" : "Upcoming"}</p>
                       </div>
                       <Button variant="ghost" size="icon" onClick={() => remove(h)} aria-label={`Remove ${h.name}`}><Trash2 className="h-4 w-4 text-danger" /></Button>
                     </li>

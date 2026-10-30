@@ -2,29 +2,73 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ------------------------------------------------------------------ Tokens
+   Neutral, formal palette (light + dark) with soft semantic status colours. */
 :root {
   --bg: #fafafa;
   --card: #ffffff;
-  --fg: #18181b;
-  --muted: #71717a;
-  --border: #e4e4e7;
-  --subtle: #f4f4f5;
-  --accent: #18181b;
-  --accent-soft: #f4f4f5;
-  --accent-fg: #18181b;
-  --primary: #111114;
+  --raised: #ffffff;
+  --fg: #181d27;
+  --fg-2: #414651;
+  --muted: #717680;
+  --border: #e9eaeb;
+  --border-strong: #d5d7da;
+  --subtle: #f5f5f5;
+  --accent: #181d27;
+  --accent-soft: #f5f5f5;
+  --accent-fg: #181d27;
+  --primary: #181d27;
   --primary-fg: #ffffff;
-  --danger: #18181b;
-  --shadow: 0 1px 2px rgb(16 16 24 / 0.04);
+  --danger: #d92d20;
+  --ring: rgb(24 29 39 / 0.12);
+  --shadow: 0 1px 2px rgb(10 13 18 / 0.05);
+  --shadow-lg: 0 12px 16px -4px rgb(10 13 18 / 0.08), 0 4px 6px -2px rgb(10 13 18 / 0.03);
+
+  --st-p-bg: #ecfdf3;  --st-p-fg: #067647;  --st-p-bd: #abefc6;
+  --st-ab-bg: #fef3f2; --st-ab-fg: #b42318; --st-ab-bd: #fecdca;
+  --st-hd-bg: #fffaeb; --st-hd-fg: #b54708; --st-hd-bd: #fedf89;
+  --st-h-bg: #eff8ff;  --st-h-fg: #175cd3;  --st-h-bd: #b2ddff;
+  --st-wo-bg: #fafafa; --st-wo-fg: #a4a7ae; --st-wo-bd: #f0f0f1;
   color-scheme: light;
+}
+
+.dark {
+  --bg: #0c0c0d;
+  --card: #141415;
+  --raised: #1b1b1d;
+  --fg: #f7f7f7;
+  --fg-2: #cecfd2;
+  --muted: #94979c;
+  --border: #252527;
+  --border-strong: #333336;
+  --subtle: #1d1d1f;
+  --accent: #f7f7f7;
+  --accent-soft: #1f1f22;
+  --accent-fg: #f7f7f7;
+  --primary: #f7f7f7;
+  --primary-fg: #0c0c0d;
+  --danger: #f97066;
+  --ring: rgb(255 255 255 / 0.12);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 32px -8px rgb(0 0 0 / 0.6);
+
+  --st-p-bg: #053321;  --st-p-fg: #75e0a7;  --st-p-bd: #085d3a;
+  --st-ab-bg: #55160c; --st-ab-fg: #fda29b; --st-ab-bd: #912018;
+  --st-hd-bg: #4e1d09; --st-hd-fg: #fec84b; --st-hd-bd: #93370d;
+  --st-h-bg: #102a56;  --st-h-fg: #84caff;  --st-h-bd: #1849a9;
+  --st-wo-bg: #161618; --st-wo-fg: #55585e; --st-wo-bd: #1f1f22;
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-card: var(--card);
+  --color-raised: var(--raised);
   --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-subtle: var(--subtle);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
@@ -32,279 +76,78 @@
   --color-primary: var(--primary);
   --color-primary-fg: var(--primary-fg);
   --color-danger: var(--danger);
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, monospace;
   --shadow-soft: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
 }
 
+html { font-size: 16px; }
 body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
-
-h1, h2, h3 {
-  font-family: var(--font-display);
-  letter-spacing: -0.02em;
-}
-
-* {
-  border-color: var(--border);
-}
-
-/* Status chips render with configured colors; dim them slightly in dark mode. */
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.015em; }
+* { border-color: var(--border); }
+::selection { background: var(--fg); color: var(--bg); }
+button, a { -webkit-tap-highlight-color: transparent; }
 
 .scrollbar-thin::-webkit-scrollbar { width: 10px; height: 10px; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; border: 2px solid var(--card); }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 3px solid var(--card); }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 
-/* ---------- Motion ---------- */
-@keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes slide-down { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-@keyframes pop { 0% { transform: scale(0.85); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
-@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-@keyframes glow { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.06); } }
+/* ------------------------------------------------------------------ Status badges */
+.st { box-shadow: inset 0 0 0 1px var(--st-bd); background: var(--st-bg); color: var(--st-fg); }
+.st-P  { --st-bg: var(--st-p-bg);  --st-fg: var(--st-p-fg);  --st-bd: var(--st-p-bd); }
+.st-AB { --st-bg: var(--st-ab-bg); --st-fg: var(--st-ab-fg); --st-bd: var(--st-ab-bd); }
+.st-HD { --st-bg: var(--st-hd-bg); --st-fg: var(--st-hd-fg); --st-bd: var(--st-hd-bd); }
+.st-H  { --st-bg: var(--st-h-bg);  --st-fg: var(--st-h-fg);  --st-bd: var(--st-h-bd); }
+.st-WO, .st-NA { --st-bg: var(--st-wo-bg); --st-fg: var(--st-wo-fg); --st-bd: var(--st-wo-bd); }
+.dot-P { background: var(--st-p-fg); } .dot-AB { background: var(--st-ab-fg); } .dot-HD { background: var(--st-hd-fg); } .dot-H { background: var(--st-h-fg); }
 
-.animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
-.animate-slide-down { animation: slide-down 0.25s ease-out both; }
-.animate-pop { animation: pop 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
-.animate-shake { animation: shake 0.4s ease-in-out; }
-
-.login-glow {
-  background:
-    radial-gradient(600px 300px at 50% 0%, rgb(24 24 27 / 0.06), transparent 70%),
-    radial-gradient(500px 260px at 85% 100%, rgb(24 24 27 / 0.04), transparent 70%);
-  animation: glow 8s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-fade-up, .animate-slide-down, .animate-pop, .animate-shake, .login-glow { animation: none; }
-}
-
-/* Monochrome: all accent palettes resolve to zinc greys. */
-@theme {
-  --color-red-50: #fafafa;
-  --color-red-100: #f4f4f5;
-  --color-red-200: #e4e4e7;
-  --color-red-300: #d4d4d8;
-  --color-red-400: #a1a1aa;
-  --color-red-500: #71717a;
-  --color-red-600: #52525b;
-  --color-red-700: #3f3f46;
-  --color-red-800: #27272a;
-  --color-red-900: #18181b;
-  --color-red-950: #09090b;
-  --color-orange-50: #fafafa;
-  --color-orange-100: #f4f4f5;
-  --color-orange-200: #e4e4e7;
-  --color-orange-300: #d4d4d8;
-  --color-orange-400: #a1a1aa;
-  --color-orange-500: #71717a;
-  --color-orange-600: #52525b;
-  --color-orange-700: #3f3f46;
-  --color-orange-800: #27272a;
-  --color-orange-900: #18181b;
-  --color-orange-950: #09090b;
-  --color-amber-50: #fafafa;
-  --color-amber-100: #f4f4f5;
-  --color-amber-200: #e4e4e7;
-  --color-amber-300: #d4d4d8;
-  --color-amber-400: #a1a1aa;
-  --color-amber-500: #71717a;
-  --color-amber-600: #52525b;
-  --color-amber-700: #3f3f46;
-  --color-amber-800: #27272a;
-  --color-amber-900: #18181b;
-  --color-amber-950: #09090b;
-  --color-yellow-50: #fafafa;
-  --color-yellow-100: #f4f4f5;
-  --color-yellow-200: #e4e4e7;
-  --color-yellow-300: #d4d4d8;
-  --color-yellow-400: #a1a1aa;
-  --color-yellow-500: #71717a;
-  --color-yellow-600: #52525b;
-  --color-yellow-700: #3f3f46;
-  --color-yellow-800: #27272a;
-  --color-yellow-900: #18181b;
-  --color-yellow-950: #09090b;
-  --color-lime-50: #fafafa;
-  --color-lime-100: #f4f4f5;
-  --color-lime-200: #e4e4e7;
-  --color-lime-300: #d4d4d8;
-  --color-lime-400: #a1a1aa;
-  --color-lime-500: #71717a;
-  --color-lime-600: #52525b;
-  --color-lime-700: #3f3f46;
-  --color-lime-800: #27272a;
-  --color-lime-900: #18181b;
-  --color-lime-950: #09090b;
-  --color-green-50: #fafafa;
-  --color-green-100: #f4f4f5;
-  --color-green-200: #e4e4e7;
-  --color-green-300: #d4d4d8;
-  --color-green-400: #a1a1aa;
-  --color-green-500: #71717a;
-  --color-green-600: #52525b;
-  --color-green-700: #3f3f46;
-  --color-green-800: #27272a;
-  --color-green-900: #18181b;
-  --color-green-950: #09090b;
-  --color-emerald-50: #fafafa;
-  --color-emerald-100: #f4f4f5;
-  --color-emerald-200: #e4e4e7;
-  --color-emerald-300: #d4d4d8;
-  --color-emerald-400: #a1a1aa;
-  --color-emerald-500: #71717a;
-  --color-emerald-600: #52525b;
-  --color-emerald-700: #3f3f46;
-  --color-emerald-800: #27272a;
-  --color-emerald-900: #18181b;
-  --color-emerald-950: #09090b;
-  --color-teal-50: #fafafa;
-  --color-teal-100: #f4f4f5;
-  --color-teal-200: #e4e4e7;
-  --color-teal-300: #d4d4d8;
-  --color-teal-400: #a1a1aa;
-  --color-teal-500: #71717a;
-  --color-teal-600: #52525b;
-  --color-teal-700: #3f3f46;
-  --color-teal-800: #27272a;
-  --color-teal-900: #18181b;
-  --color-teal-950: #09090b;
-  --color-cyan-50: #fafafa;
-  --color-cyan-100: #f4f4f5;
-  --color-cyan-200: #e4e4e7;
-  --color-cyan-300: #d4d4d8;
-  --color-cyan-400: #a1a1aa;
-  --color-cyan-500: #71717a;
-  --color-cyan-600: #52525b;
-  --color-cyan-700: #3f3f46;
-  --color-cyan-800: #27272a;
-  --color-cyan-900: #18181b;
-  --color-cyan-950: #09090b;
-  --color-sky-50: #fafafa;
-  --color-sky-100: #f4f4f5;
-  --color-sky-200: #e4e4e7;
-  --color-sky-300: #d4d4d8;
-  --color-sky-400: #a1a1aa;
-  --color-sky-500: #71717a;
-  --color-sky-600: #52525b;
-  --color-sky-700: #3f3f46;
-  --color-sky-800: #27272a;
-  --color-sky-900: #18181b;
-  --color-sky-950: #09090b;
-  --color-blue-50: #fafafa;
-  --color-blue-100: #f4f4f5;
-  --color-blue-200: #e4e4e7;
-  --color-blue-300: #d4d4d8;
-  --color-blue-400: #a1a1aa;
-  --color-blue-500: #71717a;
-  --color-blue-600: #52525b;
-  --color-blue-700: #3f3f46;
-  --color-blue-800: #27272a;
-  --color-blue-900: #18181b;
-  --color-blue-950: #09090b;
-  --color-indigo-50: #fafafa;
-  --color-indigo-100: #f4f4f5;
-  --color-indigo-200: #e4e4e7;
-  --color-indigo-300: #d4d4d8;
-  --color-indigo-400: #a1a1aa;
-  --color-indigo-500: #71717a;
-  --color-indigo-600: #52525b;
-  --color-indigo-700: #3f3f46;
-  --color-indigo-800: #27272a;
-  --color-indigo-900: #18181b;
-  --color-indigo-950: #09090b;
-  --color-violet-50: #fafafa;
-  --color-violet-100: #f4f4f5;
-  --color-violet-200: #e4e4e7;
-  --color-violet-300: #d4d4d8;
-  --color-violet-400: #a1a1aa;
-  --color-violet-500: #71717a;
-  --color-violet-600: #52525b;
-  --color-violet-700: #3f3f46;
-  --color-violet-800: #27272a;
-  --color-violet-900: #18181b;
-  --color-violet-950: #09090b;
-  --color-purple-50: #fafafa;
-  --color-purple-100: #f4f4f5;
-  --color-purple-200: #e4e4e7;
-  --color-purple-300: #d4d4d8;
-  --color-purple-400: #a1a1aa;
-  --color-purple-500: #71717a;
-  --color-purple-600: #52525b;
-  --color-purple-700: #3f3f46;
-  --color-purple-800: #27272a;
-  --color-purple-900: #18181b;
-  --color-purple-950: #09090b;
-  --color-fuchsia-50: #fafafa;
-  --color-fuchsia-100: #f4f4f5;
-  --color-fuchsia-200: #e4e4e7;
-  --color-fuchsia-300: #d4d4d8;
-  --color-fuchsia-400: #a1a1aa;
-  --color-fuchsia-500: #71717a;
-  --color-fuchsia-600: #52525b;
-  --color-fuchsia-700: #3f3f46;
-  --color-fuchsia-800: #27272a;
-  --color-fuchsia-900: #18181b;
-  --color-fuchsia-950: #09090b;
-  --color-pink-50: #fafafa;
-  --color-pink-100: #f4f4f5;
-  --color-pink-200: #e4e4e7;
-  --color-pink-300: #d4d4d8;
-  --color-pink-400: #a1a1aa;
-  --color-pink-500: #71717a;
-  --color-pink-600: #52525b;
-  --color-pink-700: #3f3f46;
-  --color-pink-800: #27272a;
-  --color-pink-900: #18181b;
-  --color-pink-950: #09090b;
-  --color-rose-50: #fafafa;
-  --color-rose-100: #f4f4f5;
-  --color-rose-200: #e4e4e7;
-  --color-rose-300: #d4d4d8;
-  --color-rose-400: #a1a1aa;
-  --color-rose-500: #71717a;
-  --color-rose-600: #52525b;
-  --color-rose-700: #3f3f46;
-  --color-rose-800: #27272a;
-  --color-rose-900: #18181b;
-  --color-rose-950: #09090b;
-  --color-slate-50: #fafafa;
-  --color-slate-100: #f4f4f5;
-  --color-slate-200: #e4e4e7;
-  --color-slate-300: #d4d4d8;
-  --color-slate-400: #a1a1aa;
-  --color-slate-500: #71717a;
-  --color-slate-600: #52525b;
-  --color-slate-700: #3f3f46;
-  --color-slate-800: #27272a;
-  --color-slate-900: #18181b;
-  --color-slate-950: #09090b;
-}
-
-/* ---------- More motion ---------- */
-@keyframes scale-in { from { opacity: 0; transform: scale(0.96) translateY(6px); } to { opacity: 1; transform: none; } }
+/* ------------------------------------------------------------------ Motion */
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-down { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes scale-in { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pop { 0% { transform: scale(0.8); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 @keyframes logo-in { from { opacity: 0; transform: rotate(-90deg) scale(0.6); } to { opacity: 1; transform: none; } }
-@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes ripple { from { transform: scale(0); opacity: 0.35; } to { transform: scale(4); opacity: 0; } }
+@keyframes glow { 0%, 100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 var(--ring); } 100% { box-shadow: 0 0 0 10px transparent; } }
 
-.animate-scale-in { animation: scale-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.animate-fade-in { animation: fade-in 0.25s ease-out both; }
-.animate-logo-in { animation: logo-in 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
-.animate-float { animation: float 4s ease-in-out infinite; }
+/* Animations end with no transform left behind, so fixed popovers are not affected. */
+.animate-fade-up { animation: fade-up 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+.animate-fade-in { animation: fade-in 0.25s ease-out backwards; }
+.animate-slide-down { animation: slide-down 0.22s ease-out backwards; }
+.animate-scale-in { animation: scale-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.animate-pop { animation: pop 0.32s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.animate-shake { animation: shake 0.4s ease-in-out; }
+.animate-logo-in { animation: logo-in 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards; }
+.animate-pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
+.bar-grow { transform-origin: left; animation: bar-grow 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
+.ripple { position: absolute; border-radius: 999px; pointer-events: none; background: currentColor; animation: ripple 0.55s ease-out forwards; }
 .shimmer {
-  background: linear-gradient(90deg, #f4f4f5 0%, #e9e9ec 40%, #f4f4f5 80%) #f4f4f5;
+  background: linear-gradient(90deg, var(--subtle) 0%, var(--border) 40%, var(--subtle) 80%) var(--subtle);
   background-size: 800px 100%;
   animation: shimmer 1.3s linear infinite;
 }
-button, a { -webkit-tap-highlight-color: transparent; }
-::selection { background: #18181b; color: #fff; }
+.login-glow {
+  background:
+    radial-gradient(600px 300px at 50% 0%, rgb(120 120 140 / 0.10), transparent 70%),
+    radial-gradient(500px 260px at 85% 100%, rgb(120 120 140 / 0.08), transparent 70%);
+  animation: glow 9s ease-in-out infinite;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-scale-in, .animate-fade-in, .animate-logo-in, .animate-float, .shimmer { animation: none; }
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
-@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-.bar-grow { transform-origin: left; animation: bar-grow 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }

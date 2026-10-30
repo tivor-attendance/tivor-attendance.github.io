@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { toast } from "sonner";
 import {
-  CalendarDays, Check, ChevronLeft, ChevronRight, Download, Info, Loader2, Lock, MoreHorizontal, Redo2, RotateCcw, Search, Undo2, X, AlertCircle, PartyPopper, TrendingUp, UserPlus, Users, UserCheck, UserX,
+  CalendarDays, Check, ChevronLeft, ChevronRight, Download, Info, Loader2, Lock, MoreHorizontal, Pencil, Redo2, RotateCcw, Search, Undo2, X, AlertCircle, PartyPopper, TrendingUp, UserPlus, Users, UserCheck, UserX,
 } from "lucide-react";
-import { Button, Card, Dialog, EmptyState, Field, Input, Select, Skeleton, StatusChip, Textarea } from "@/components/ui";
+import { Button, Card, Dialog, EmptyState, Field, Input, Select, Skeleton, StatusChip, Textarea, addRipple } from "@/components/ui";
 import { useConfirm } from "@/components/confirm";
 import { LOCAL_MODE, api, download } from "@/lib/client";
 import { cn, fmtNum } from "@/lib/utils";
@@ -23,17 +23,17 @@ type Pos = { r: number; c: number };
 type Op = { r: number; c: number; status?: string; reset?: boolean; remarks?: string | null };
 type HistoryCell = { employeeId: string; date: string; before: GridCell; after: GridCell };
 type Popover =
-  | { kind: "cell"; x: number; y: number; askReason?: string }
-  | { kind: "column"; c: number; x: number; y: number }
-  | { kind: "row"; r: number; x: number; y: number };
+  | { kind: "cell"; x: number; y: number; yTop: number; askReason?: string }
+  | { kind: "column"; c: number; x: number; y: number; yTop: number }
+  | { kind: "row"; r: number; x: number; y: number; yTop: number };
 
-const ROW_H = 40;
-const DAY_W = 38;
+const ROW_H = 38;
+const DAY_W = 36;
 const CHECK_W = 0;
-const CODE_W = 72;
-const NAME_W = 168;
+const CODE_W = 70;
+const NAME_W = 172;
 const LEFT_W = CHECK_W + CODE_W + NAME_W;
-const SUM_W = 64;
+const SUM_W = 60;
 const SUMMARY = [{ key: "present", label: "Present" }, { key: "halfDay", label: "Half" }, { key: "absent", label: "Absent" }] as const;
 
 const sameCell = (a: GridCell, b: GridCell) => a.status === b.status && a.source === b.source && (a.remarks ?? null) === (b.remarks ?? null);
@@ -48,6 +48,7 @@ export function AttendanceGrid() {
   const [department, setDepartment] = useState("");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<GridRow | null>(null);
   const [departments, setDepartments] = useState<string[]>([]);
 
   const [data, setData] = useState<GridData | null>(null);
@@ -277,7 +278,7 @@ export function AttendanceGrid() {
     const el = gridRef.current?.querySelector<HTMLElement>(`[data-cell="${p.r}-${p.c}"]`);
     const rect = el?.getBoundingClientRect();
     if (!rect) return;
-    setPopover({ kind: "cell", x: rect.left, y: rect.bottom + 4, askReason });
+    setPopover({ kind: "cell", x: rect.left - 4, y: rect.bottom + 6, yTop: rect.top - 6, askReason });
   }, []);
 
   useEffect(() => {
@@ -340,40 +341,42 @@ export function AttendanceGrid() {
   const focusCell = focus ? rows[focus.r]?.cells[focus.c] : null;
 
   // ---------------------------------------------------------------- render
+  const anchorOf = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.bottom + 6, yTop: r.top - 6 };
+  };
+
   const header = (
-    <div className="mb-4 flex flex-col gap-3">
+    <div className="mb-5 flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center rounded-full border bg-card p-1 shadow-soft">
-          <Button variant="ghost" size="icon" onClick={() => shiftMonth(-1)} aria-label="Previous month"><ChevronLeft className="h-4 w-4" /></Button>
-          <Select aria-label="Month" value={month} onChange={(e) => goMonth(year, Number(e.target.value))} className="h-8 w-32 border-0 bg-transparent font-medium focus:ring-0">
+        <div className="flex h-9 items-center rounded-lg border border-border-strong bg-card shadow-soft">
+          <button onClick={() => shiftMonth(-1)} aria-label="Previous month" className="flex h-full w-8 items-center justify-center rounded-l-lg text-muted transition hover:bg-subtle hover:text-fg active:scale-90"><ChevronLeft className="h-4 w-4" /></button>
+          <Select aria-label="Month" value={month} onChange={(e) => goMonth(year, Number(e.target.value))} className="h-full w-[118px] rounded-none border-0 border-x bg-transparent text-[13px] font-medium shadow-none focus:ring-0">
             {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </Select>
-          <Select aria-label="Year" value={year} onChange={(e) => goMonth(Number(e.target.value), month)} className="h-8 w-28 border-0 bg-transparent font-medium focus:ring-0">
+          <Select aria-label="Year" value={year} onChange={(e) => goMonth(Number(e.target.value), month)} className="h-full w-[92px] rounded-none border-0 border-r bg-transparent pr-7 text-[13px] font-medium shadow-none focus:ring-0">
             {Array.from({ length: 9 }, (_, i) => now.year - 5 + i).map((y) => <option key={y} value={y}>{y}</option>)}
           </Select>
-          <Button variant="ghost" size="icon" onClick={() => shiftMonth(1)} aria-label="Next month"><ChevronRight className="h-4 w-4" /></Button>
+          <button onClick={() => shiftMonth(1)} aria-label="Next month" className="flex h-full w-8 items-center justify-center rounded-r-lg text-muted transition hover:bg-subtle hover:text-fg active:scale-90"><ChevronRight className="h-4 w-4" /></button>
         </div>
-        {(year !== now.year || month !== now.month) && <Button variant="outline" size="sm" onClick={() => goMonth(now.year, now.month)}><CalendarDays className="h-3.5 w-3.5" />Today</Button>}
+        {(year !== now.year || month !== now.month) && <Button variant="outline" size="sm" className="h-9 animate-scale-in" onClick={() => goMonth(now.year, now.month)}><CalendarDays className="h-3.5 w-3.5" />This month</Button>}
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <Input placeholder="Search employee" value={search} onChange={(e) => setSearch(e.target.value)} className="h-10 w-48 rounded-full pl-9" />
+          <Input placeholder="Search employees" value={search} onChange={(e) => setSearch(e.target.value)} className="w-56 pl-9 text-[13px]" />
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           <SaveIndicator pending={pending} state={saveState} />
-          <Button variant="ghost" size="icon" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)"><Undo2 className="h-4 w-4" /></Button>
-          <Button variant="ghost" size="icon" onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Y)"><Redo2 className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={undo} disabled={!undoStack.current.length} title="Undo (Ctrl+Z)"><Undo2 className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={redo} disabled={!redoStack.current.length} title="Redo (Ctrl+Y)"><Redo2 className="h-4 w-4" /></Button>
           <ExportMenu year={year} month={month} department={department} />
           <Button onClick={() => setAddOpen(true)}><UserPlus className="h-4 w-4" />Add employee</Button>
         </div>
       </div>
       {data?.lock && (
-        <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          <Lock className="h-4 w-4" /> Locked for payroll by {data.lock.lockedBy} on {new Date(data.lock.lockedAt).toLocaleDateString("en-IN")}. The grid is read-only.
-          <Link href={`/payroll?year=${year}&month=${month}`} className="ml-auto font-medium underline">Payroll</Link>
-        </div>
+        <div className="flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm"><Lock className="h-4 w-4" /> This month is locked and read-only.</div>
       )}
       {data && !data.canEdit && !data.lock && (
-        <div className="flex items-center gap-2 rounded-2xl bg-subtle px-4 py-2.5 text-sm text-muted"><Info className="h-4 w-4" /> Read-only access.</div>
+        <div className="flex items-center gap-2 rounded-lg bg-subtle px-4 py-2.5 text-sm text-muted"><Info className="h-4 w-4" /> Read-only access.</div>
       )}
     </div>
   );
@@ -404,37 +407,40 @@ export function AttendanceGrid() {
       ) : (
         <>
           <StatsRow key={data.today} rows={rows} days={days} defs={defs} />
-          <DayMarker key={`${data.today}-${year}-${month}`} rows={rows} days={days} defs={defs} canEdit={data.canEdit} onRemove={removeEmployee}
+          <DayMarker key={`${data.today}-${year}-${month}`} rows={rows} days={days} defs={defs} canEdit={data.canEdit}
+            onRemove={removeEmployee} onEdit={(row) => setEditing(row)}
             onSet={(r, c, status, reason) => applyOps([status === "__reset" ? { r, c, reset: true } : { r, c, status, remarks: reason ?? null }])} />
 
           {/* Monthly register (desktop / tablet) */}
-          <div className="mb-3 mt-10 hidden items-end justify-between md:flex">
+          <div className="mb-3 mt-8 hidden items-end justify-between md:flex">
             <div>
-              <h2 className="text-lg font-semibold">Monthly register</h2>
-              <p className="text-sm text-muted">Click any box to change it · drag to select many · type <b>P</b> or <b>A</b></p>
+              <h2 className="text-base font-semibold">Monthly register</h2>
+              <p className="mt-0.5 text-[13px] text-muted">Click a cell to change it · drag to select several · keys <kbd className="rounded border bg-card px-1 font-mono text-[11px]">P</kbd> <kbd className="rounded border bg-card px-1 font-mono text-[11px]">H</kbd> <kbd className="rounded border bg-card px-1 font-mono text-[11px]">A</kbd></p>
             </div>
           </div>
-          <Card className="hidden overflow-hidden md:block">
+          <Card className="hidden animate-fade-up overflow-hidden md:block">
             <div ref={gridRef} tabIndex={0} onKeyDown={onKeyDown} className="outline-none" aria-label="Attendance grid. Use arrow keys to move and letter shortcuts to set status.">
-              <div ref={scrollRef} className="scrollbar-thin relative max-h-[calc(100vh-230px)] min-h-[320px] overflow-auto">
+              <div ref={scrollRef} className="scrollbar-thin relative max-h-[calc(100vh-200px)] min-h-[300px] overflow-auto">
                 <table className="border-separate border-spacing-0 text-xs" style={{ width: LEFT_W + days.length * DAY_W + SUMMARY.length * SUM_W }}>
                   <thead>
                     <tr>
-                      <th className="sticky top-0 z-30 border-b bg-card px-2 text-left font-medium text-muted" style={{ left: CHECK_W, width: CODE_W, minWidth: CODE_W }}>Emp ID</th>
-                      <th className="sticky top-0 z-30 border-b border-r bg-card px-2 text-left font-medium text-muted" style={{ left: CHECK_W + CODE_W, width: NAME_W, minWidth: NAME_W }}>Employee</th>
+                      <th className="sticky top-0 z-30 border-b bg-subtle px-3 text-left text-[11px] font-medium uppercase tracking-wide text-muted" style={{ left: CHECK_W, width: CODE_W, minWidth: CODE_W }}>ID</th>
+                      <th className="sticky top-0 z-30 border-b border-r bg-subtle px-3 text-left text-[11px] font-medium uppercase tracking-wide text-muted" style={{ left: CHECK_W + CODE_W, width: NAME_W, minWidth: NAME_W }}>Employee</th>
                       {days.map((d, c) => (
                         <th key={d.date} style={{ width: DAY_W, minWidth: DAY_W }}
-                          title={d.holiday ? `Holiday: ${d.holiday}` : d.override === true ? "Working day (override)" : d.kind === "weeklyOff" ? "Weekly off" : undefined}
-                          onClick={(e) => { if (!data.canEdit) return; const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setPopover({ kind: "column", c, x: r.left, y: r.bottom + 4 }); }}
-                          className={cn("sticky top-0 z-20 cursor-pointer select-none border-b py-1.5 text-center font-medium",
-                            d.today ? "bg-accent text-white" : d.kind === "holiday" ? "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200" : d.kind === "weeklyOff" ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400" : "bg-card text-fg",
+                          title={d.holiday ? `Holiday: ${d.holiday}` : d.kind === "weeklyOff" ? "Weekly off" : `Mark everyone on ${formatDate(d.date)}`}
+                          onClick={(e) => { if (!data.canEdit) return; setPopover({ kind: "column", c, ...anchorOf(e.currentTarget as HTMLElement) }); }}
+                          className={cn("sticky top-0 z-20 cursor-pointer select-none border-b py-1.5 text-center transition-colors hover:bg-border/60",
+                            d.kind === "weeklyOff" ? "bg-subtle text-muted" : d.kind === "holiday" ? "bg-subtle text-[var(--st-h-fg)]" : "bg-subtle text-fg-2",
                             d.future && !d.today && "opacity-60")}>
-                          <div className="text-[13px] leading-none">{d.day}</div>
-                          <div className="mt-0.5 text-[9px] font-normal uppercase opacity-80">{WEEKDAYS_SHORT[d.weekday].slice(0, 2)}</div>
+                          <div className={cn("mx-auto flex h-7 w-7 flex-col items-center justify-center rounded-md", d.today && "bg-primary text-primary-fg shadow-sm")}>
+                            <span className="text-[12px] font-semibold leading-none">{d.day}</span>
+                            <span className="mt-0.5 text-[8px] font-medium uppercase leading-none opacity-70">{WEEKDAYS_SHORT[d.weekday].slice(0, 2)}</span>
+                          </div>
                         </th>
                       ))}
                       {SUMMARY.map((s, i) => (
-                        <th key={s.key} className={cn("sticky top-0 z-30 border-b bg-subtle px-1 text-center text-[10px] font-medium leading-tight text-muted xl:right-[var(--r)]", i === 0 && "border-l", s.key === "absent" && "text-red-600 dark:text-red-400")}
+                        <th key={s.key} className={cn("sticky top-0 z-30 border-b bg-subtle px-1 text-center text-[11px] font-medium uppercase tracking-wide text-muted xl:right-[var(--r)]", i === 0 && "border-l")}
                           style={{ width: SUM_W, minWidth: SUM_W, ["--r" as string]: `${(SUMMARY.length - 1 - i) * SUM_W}px` }}>{s.label}</th>
                       ))}
                     </tr>
@@ -447,13 +453,13 @@ export function AttendanceGrid() {
                       const s = summaries[r];
                       return (
                         <tr key={row.id} style={{ height: ROW_H }} className="group">
-                          <td className="sticky z-10 border-b bg-card px-2 font-mono text-[11px] text-muted group-hover:bg-subtle" style={{ left: CHECK_W }}>{row.empCode}</td>
-                          <td className="sticky z-10 border-b border-r bg-card px-2 group-hover:bg-subtle" style={{ left: CHECK_W + CODE_W }}>
+                          <td className="sticky z-10 border-b bg-card px-3 font-mono text-[11px] text-muted transition-colors group-hover:bg-subtle" style={{ left: CHECK_W }}>{row.empCode}</td>
+                          <td className="sticky z-10 border-b border-r bg-card px-3 transition-colors group-hover:bg-subtle" style={{ left: CHECK_W + CODE_W }}>
                             <div className="flex items-center gap-1">
-                              <div className="min-w-0 flex-1 truncate text-[13px] font-medium">{row.name}</div>
+                              <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{row.name}</div>
                               {data.canEdit && (
-                                <button aria-label={`Row actions for ${row.name}`} className="rounded-md p-1 text-muted opacity-0 hover:bg-border group-hover:opacity-100 focus:opacity-100"
-                                  onClick={(e) => { const rc = e.currentTarget.getBoundingClientRect(); setPopover({ kind: "row", r, x: rc.left, y: rc.bottom + 4 }); }}>
+                                <button aria-label={`Row actions for ${row.name}`} className="rounded-md p-1 text-muted opacity-0 transition hover:bg-border group-hover:opacity-100 focus:opacity-100"
+                                  onClick={(e) => setPopover({ kind: "row", r, ...anchorOf(e.currentTarget) })}>
                                   <MoreHorizontal className="h-3.5 w-3.5" />
                                 </button>
                               )}
@@ -475,8 +481,8 @@ export function AttendanceGrid() {
                               onMouseEnter={() => { if (dragging.current) setFocus({ r, c }); }} />
                           ))}
                           {SUMMARY.map((sm, i) => (
-                            <td key={sm.key} className={cn("z-10 border-b bg-subtle text-center tabular-nums xl:sticky xl:right-[var(--r)]", i === 0 && "border-l",
-                              sm.key === "absent" && s.absent > 0 && "font-semibold text-red-600 dark:text-red-400")}
+                            <td key={sm.key} className={cn("z-10 border-b bg-card text-center text-[13px] tabular-nums transition-colors group-hover:bg-subtle xl:sticky xl:right-[var(--r)]", i === 0 && "border-l",
+                              sm.key === "absent" && s.absent > 0 && "font-semibold text-[var(--st-ab-fg)]", sm.key === "halfDay" && s.halfDay > 0 && "font-semibold text-[var(--st-hd-fg)]")}
                               style={{ ["--r" as string]: `${(SUMMARY.length - 1 - i) * SUM_W}px` }}>{fmtNum(s[sm.key])}</td>
                           ))}
                         </tr>
@@ -487,33 +493,28 @@ export function AttendanceGrid() {
                 </table>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t px-4 py-3 text-[11px] text-muted">
-              {selectableStatuses(data.statuses).map((s) => (
-                <span key={s.code} className="inline-flex items-center gap-1.5">
-                  <StatusChip def={s} code={s.code} />{s.label}{s.shortcut && <kbd className="rounded border px-1 font-mono text-[10px]">{s.shortcut}</kbd>}
-                </span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-subtle/50 px-4 py-2.5 text-xs text-muted">
+              {["P", "HD", "AB", "H", "WO"].map((code) => (
+                <span key={code} className="inline-flex items-center gap-1.5"><StatusChip code={code} />{defs.get(code)?.label}</span>
               ))}
               <span className="ml-auto inline-flex items-center gap-3">
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border-l-[6px] border-t-[6px] border-l-accent border-t-transparent" /> Edited by HR</span>
-                <span className="inline-flex items-center gap-1.5"><StatusChip def={defs.get("H")} code="H" />Holiday (counted Present)</span>
-                <span className="inline-flex items-center gap-1.5"><StatusChip def={defs.get("WO")} code="WO" />Sunday off</span>
-                <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Has reason (hover to read)</span>
-                <span>Type P, or A for AB · Del = reset · Ctrl+Z undo</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-fg-2" /> Has reason (hover)</span>
+                <span className="inline-flex items-center gap-1.5"><span className="rounded border px-1 text-[10px] font-semibold">₹</span> Exam — paid, no LOP</span>
               </span>
             </div>
           </Card>
-
         </>
       )}
 
       <AddEmployeeDialog open={addOpen} onClose={() => setAddOpen(false)} onAdded={() => { setAddOpen(false); void load(); }} />
+      <EditEmployeeDialog row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); }} />
 
       {popover && (
-        <FloatingPanel x={popover.x} y={popover.y} onClose={() => setPopover(null)}>
+        <FloatingPanel x={popover.x} y={popover.y} yTop={popover.yTop} onClose={() => setPopover(null)}>
           {popover.kind === "cell" && focus && focusCell && (
             <CellPanel
-              title={selectedCount > 1 ? `${selectedCount} cells selected` : `${rows[focus.r].name} · ${formatDate(days[focus.c].date, "long")}`}
-              subtitle={selectedCount === 1 ? (focusCell.def === "NA" ? "Not employed on this date" : days[focus.c].kind === "holiday" ? `Public holiday: ${days[focus.c].holiday} — always H` : days[focus.c].future ? "Upcoming day" : focusCell.source === "MANUAL" ? "Marked by you" : "Default (Present)") : undefined}
+              title={selectedCount > 1 ? `${selectedCount} cells selected` : rows[focus.r].name}
+              subtitle={selectedCount === 1 ? `${formatDate(days[focus.c].date, "long")} · ${focusCell.def === "NA" ? "not employed" : days[focus.c].kind === "holiday" ? `${days[focus.c].holiday} (holiday)` : days[focus.c].future ? "upcoming" : focusCell.source === "MANUAL" ? "marked" : "default"}` : "Choose a status for all selected cells"}
               statuses={selectableStatuses(data.statuses).filter((s) => !(selectedCount === 1 && days[focus.c].future) || s.plannable)}
               current={selectedCount === 1 ? focusCell.status : null}
               remarks={selectedCount === 1 ? focusCell.remarks : undefined}
@@ -525,8 +526,8 @@ export function AttendanceGrid() {
           )}
           {popover.kind === "column" && (
             <CellPanel
-              title={`Mark all employees · ${formatDate(days[popover.c].date, "long")}`}
-              subtitle={days[popover.c].holiday ? `Holiday: ${days[popover.c].holiday}` : "Applies to everyone shown (NA days skipped)"}
+              title="Mark everyone"
+              subtitle={`${formatDate(days[popover.c].date, "long")}${days[popover.c].holiday ? ` · ${days[popover.c].holiday}` : ""}`}
               statuses={selectableStatuses(data.statuses).filter((s) => !days[popover.c].future || s.plannable)}
               current={null}
               onPick={async (code, reason) => {
@@ -539,15 +540,15 @@ export function AttendanceGrid() {
               onReset={async () => {
                 const c = popover.c;
                 setPopover(null);
-                if (!(await confirm({ title: "Reset day?", body: "Restore automatic values for everyone on this date? Remarks are cleared.", danger: true, confirmLabel: "Reset" }))) return;
+                if (!(await confirm({ title: "Reset day?", body: "Everyone goes back to the default for this date. Reasons are cleared.", danger: true, confirmLabel: "Reset" }))) return;
                 applyOps(rows.map((_, r) => ({ r, c, reset: true })));
               }}
             />
           )}
           {popover.kind === "row" && (
             <CellPanel
-              title={`Mark entire month · ${rows[popover.r].name}`}
-              subtitle="Future days accept planned leave only"
+              title={rows[popover.r].name}
+              subtitle={`Mark every day of ${MONTHS[month - 1]}`}
               statuses={selectableStatuses(data.statuses)}
               current={null}
               onPick={async (code, reason) => {
@@ -559,7 +560,7 @@ export function AttendanceGrid() {
               onReset={async () => {
                 const r = popover.r;
                 setPopover(null);
-                if (!(await confirm({ title: "Reset row to defaults?", body: `All of ${rows[r].name}'s edits this month will revert to automatic values (P / WO / H). Remarks are cleared.`, danger: true, confirmLabel: "Reset row" }))) return;
+                if (!(await confirm({ title: "Reset row?", body: `All of ${rows[r].name}'s marks this month go back to the default. Reasons are cleared.`, danger: true, confirmLabel: "Reset row" }))) return;
                 applyOps(days.map((_, c) => ({ r, c, reset: true })));
               }}
             />
@@ -570,62 +571,95 @@ export function AttendanceGrid() {
   );
 }
 
-function GridCellView({ r, c, cell, day, def, selected, focused, onMouseDown, onMouseEnter }: {
+const isExam = (reason: string | null | undefined) => !!reason && /\bexam/i.test(reason);
+
+function GridCellView({ r, c, cell, day, selected, focused, onMouseDown, onMouseEnter }: {
   r: number; c: number; cell: GridCell; day: GridDay; def?: StatusDef; selected: boolean; focused: boolean;
   onMouseDown: (e: React.MouseEvent) => void; onMouseEnter: () => void;
 }) {
   const na = cell.def === "NA";
   const upcoming = day.future && cell.source === "NONE";
+  const exam = cell.status === ABSENT_CODE && isExam(cell.remarks);
   return (
     <td data-cell={`${r}-${c}`} onMouseDown={onMouseDown} onMouseEnter={onMouseEnter}
-      className={cn("relative cursor-cell select-none border-b p-0.5 text-center", day.today && "bg-accent-soft/50", day.kind !== "working" && !day.today && "bg-subtle/60")}>
-      <div className={cn(
-        "chip relative mx-auto flex h-7 w-[32px] items-center justify-center rounded-md text-[11px] font-semibold transition-[outline]",
-        selected && "outline-2 outline-accent",
-        focused && "outline-[3px] outline-accent",
-      )}
-        style={na || upcoming ? undefined : { background: def?.bg, color: def?.fg }}
-        title={cell.remarks ?? undefined}>
-        {na ? <span className="text-muted/50">–</span> : upcoming ? <span className="text-muted/40">·</span> : cell.status}
-        {cell.source === "MANUAL" && <span className="absolute bottom-0 left-0 h-0 w-0 rounded-bl-md border-l-[6px] border-t-[6px] border-l-accent border-t-transparent" />}
-        {cell.remarks && <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />}
+      className={cn("relative cursor-pointer select-none border-b p-0.5 text-center transition-colors group-hover:bg-subtle/70", day.kind === "weeklyOff" && "bg-subtle/50", day.today && "bg-subtle")}>
+      <div
+        className={cn(
+          "relative mx-auto flex h-6 w-[30px] items-center justify-center rounded-md text-[10.5px] font-semibold transition-all duration-150 hover:scale-110",
+          !na && !upcoming && `st st-${cell.status}`,
+          (na || upcoming) && "text-muted/50",
+          selected && "ring-2 ring-fg/70 ring-offset-1 ring-offset-card",
+          focused && "ring-2 ring-fg ring-offset-1 ring-offset-card",
+        )}
+        title={cell.remarks ? `${cell.status}: ${cell.remarks}${exam ? " (paid)" : ""}` : undefined}>
+        <span key={cell.status} className={cn("inline-block", cell.source === "MANUAL" && "animate-pop")}>
+          {na ? "–" : upcoming ? "·" : cell.status}
+        </span>
+        {cell.remarks && <span className={cn("absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-card", exam ? "bg-[var(--st-p-fg)]" : "bg-fg-2")} />}
       </div>
     </td>
   );
 }
 
-function FloatingPanel({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
+/** Popover rendered into <body> next to its anchor: below if there is room, otherwise above. */
+function FloatingPanel({ x, y, yTop, onClose, children }: { x: number; y: number; yTop: number; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y });
+  const [pos, setPos] = useState<{ left: number; top: number; origin: string } | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
-    setPos({ left: Math.max(8, Math.min(x, window.innerWidth - w - 8)), top: y + h > window.innerHeight - 8 ? Math.max(8, y - h - 48) : y });
-  }, [x, y]);
+    const below = y + h <= window.innerHeight - 8;
+    setPos({
+      left: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
+      top: below ? y : Math.max(8, yTop - h),
+      origin: below ? "top left" : "bottom left",
+    });
+  }, [x, y, yTop]);
   useEffect(() => {
     const down = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    const t = setTimeout(() => window.addEventListener("mousedown", down), 0);
-    return () => { clearTimeout(t); window.removeEventListener("mousedown", down); };
+    const close = () => onClose();
+    const t = setTimeout(() => { window.addEventListener("mousedown", down); window.addEventListener("scroll", close, true); }, 0);
+    return () => { clearTimeout(t); window.removeEventListener("mousedown", down); window.removeEventListener("scroll", close, true); };
   }, [onClose]);
-  return <div ref={ref} className="fixed z-50 w-[300px] rounded-2xl border bg-card p-3 shadow-2xl" style={pos}>{children}</div>;
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div ref={ref} className={cn("fixed z-50 w-[288px] rounded-xl border bg-raised p-3 shadow-pop", pos ? "animate-scale-in" : "invisible")}
+      style={pos ? { left: pos.left, top: pos.top, transformOrigin: pos.origin } : { left: x, top: y }}>
+      {children}
+    </div>,
+    document.body,
+  );
 }
+
+const QUICK_REASONS = ["Exam", "Sick", "Personal", "Family function", "Not informed"];
 
 function ReasonForm({ code, initial, onSubmit, onBack }: { code: string; initial?: string | null; onSubmit: (reason: string) => void; onBack: () => void }) {
   const [reason, setReason] = useState(initial ?? "");
   const ok = reason.trim().length >= 2;
   const half = code === HALF_DAY_CODE;
   return (
-    <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); if (ok) onSubmit(reason.trim()); }}>
-      <p className="text-sm font-medium">{half ? "Reason for half day" : "Reason for absence"}</p>
+    <form className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); if (ok) onSubmit(reason.trim()); }}>
+      <div className="flex items-center gap-2">
+        <span className={cn("st rounded-md px-1.5 py-0.5 text-[11px] font-semibold", `st-${code}`)}>{code}</span>
+        <p className="text-[13px] font-medium">{half ? "Reason for half day" : "Reason for absence"}</p>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {QUICK_REASONS.map((q, i) => (
+          <button type="button" key={q} onClick={() => setReason(q)} style={{ animationDelay: `${i * 30}ms` }}
+            className={cn("animate-fade-up rounded-full border px-2 py-0.5 text-[11px] font-medium transition hover:border-fg/40 active:scale-95",
+              reason === q ? "border-fg bg-primary text-primary-fg" : "bg-card text-fg-2")}>{q}</button>
+        ))}
+      </div>
       <Textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500}
-        placeholder={half ? "e.g. Left early for appointment" : "e.g. Fever, exam, personal work"}
-        className="min-h-16 text-sm"
+        placeholder={half ? "e.g. Left early for an appointment" : "Type a reason…"}
+        className="min-h-14 text-[13px]"
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (ok) onSubmit(reason.trim()); } }} />
+      {isExam(reason) && !half && <p className="animate-slide-down text-[11px] text-[var(--st-p-fg)]">Exam absences are paid — no loss of pay.</p>}
       <div className="flex gap-1.5">
         <Button type="button" size="sm" variant="ghost" onClick={onBack}>Cancel</Button>
-        <Button type="submit" size="sm" className="flex-1" disabled={!ok}>Mark {half ? "Half Day (HD)" : "Absent (AB)"}</Button>
+        <Button type="submit" size="sm" className="flex-1" disabled={!ok}>Save {code}</Button>
       </div>
     </form>
   );
@@ -637,32 +671,36 @@ function CellPanel({ title, subtitle, statuses, current, remarks, disabled, askR
 }) {
   const [asking, setAsking] = useState<string | null>(askReason ?? null);
   if (asking && !disabled) return (
-    <div className="space-y-3 animate-fade-up">
-      <p className="text-xs text-muted">{title}</p>
+    <div key="ask" className="animate-fade-in">
+      <p className="mb-2 truncate text-xs text-muted">{title}</p>
       <ReasonForm code={asking} initial={current === asking ? remarks : ""} onSubmit={(r) => onPick(asking, r)} onBack={() => setAsking(null)} />
     </div>
   );
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-sm font-medium leading-tight">{title}</p>
+        <p className="truncate text-[13px] font-semibold leading-tight">{title}</p>
         {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}
       </div>
-      {!disabled && (
+      {disabled ? <p className="rounded-lg bg-subtle px-3 py-2 text-xs text-muted">This day can&apos;t be changed.</p> : (
         <>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {statuses.map((s, i) => (
-              <button key={s.code} style={{ animationDelay: `${i * 40}ms` }} onClick={() => (REASON_CODES.includes(s.code) ? setAsking(s.code) : onPick(s.code))}
+              <button key={s.code} style={{ animationDelay: `${i * 35}ms` }} onClick={(e) => { addRipple(e); if (REASON_CODES.includes(s.code)) setAsking(s.code); else onPick(s.code); }}
                 title={`${s.label}${s.shortcut ? ` (${s.shortcut})` : ""}`}
-                className={cn("animate-fade-up flex h-14 flex-col items-center justify-center rounded-xl border font-semibold transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-95",
-                  current === s.code ? "border-fg bg-fg text-white" : "bg-card text-fg hover:border-fg/30")}>
-                <span className="text-sm">{s.code}</span>
-                <span className={cn("text-[10px] font-normal", current === s.code ? "text-white/70" : "text-muted")}>{s.label}</span>
+                className={cn("relative flex h-12 animate-fade-up flex-col items-center justify-center overflow-hidden rounded-lg border transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-95",
+                  current === s.code ? `st st-${s.code} border-transparent` : "bg-card hover:border-border-strong")}>
+                <span className="text-[13px] font-semibold">{s.code}</span>
+                <span className="text-[10px] text-muted">{s.label}</span>
               </button>
             ))}
           </div>
-          {current && REASON_CODES.includes(current) && remarks && <p className="rounded-lg bg-subtle px-3 py-2 text-xs"><span className="text-muted">Reason:</span> {remarks}</p>}
-          <Button variant="outline" size="sm" className="w-full" onClick={onReset}><RotateCcw className="h-3.5 w-3.5" />Reset to Present</Button>
+          {current && REASON_CODES.includes(current) && remarks && (
+            <p className="rounded-lg bg-subtle px-2.5 py-1.5 text-xs"><span className="text-muted">Reason · </span>{remarks}{isExam(remarks) && <span className="ml-1 text-[var(--st-p-fg)]">(paid)</span>}</p>
+          )}
+          <button onClick={onReset} className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium text-muted transition hover:bg-subtle hover:text-fg">
+            <RotateCcw className="h-3.5 w-3.5" />Reset to default
+          </button>
         </>
       )}
     </div>
@@ -677,7 +715,7 @@ function BulkBar({ count, days, statuses, onApply, onClear }: {
   const [to, setTo] = useState(todayIdx);
   const [status, setStatus] = useState(statuses[0]?.code ?? "P");
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border bg-subtle px-4 py-2.5 text-sm">
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-subtle px-4 py-2.5 text-sm">
       <span className="font-medium">{count} selected</span>
       <Select value={status} onChange={(e) => setStatus(e.target.value)} className="h-8 w-40">
         {statuses.map((s) => <option key={s.code} value={s.code}>{s.code} — {s.label}</option>)}
@@ -698,7 +736,7 @@ function BulkBar({ count, days, statuses, onApply, onClear }: {
 function Avatar({ name }: { name: string }) {
   const initials = name.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-800 to-zinc-950 text-[13px] font-semibold tracking-wide text-white shadow-sm ring-4 ring-zinc-100">
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border-strong bg-subtle text-xs font-semibold text-fg-2 transition-transform duration-300 group-hover/card:scale-105">
       {initials}
     </div>
   );
@@ -745,27 +783,29 @@ function StatsRow({ rows, days, defs }: { rows: GridRow[]; days: GridDay[]; defs
   const [barReady, setBarReady] = useState(false);
   useEffect(() => { const t = setTimeout(() => setBarReady(true), 150); return () => clearTimeout(t); }, []);
   const items = [
-    { label: "Employees", value: rows.length, icon: <Users className="h-4 w-4" /> },
-    { label: "Present today", value: ti >= 0 ? presentToday : null, icon: <UserCheck className="h-4 w-4" /> },
-    { label: "Absent today", value: ti >= 0 ? absentToday : null, icon: <UserX className="h-4 w-4" />, sub: ti >= 0 && halfToday ? `+ ${halfToday} half day` : undefined },
-    { label: "Attendance this month", value: pct, pct: true, icon: <TrendingUp className="h-4 w-4" /> },
+    { label: "Employees", value: rows.length, icon: <Users className="h-4 w-4" />, dot: null },
+    { label: "Present today", value: ti >= 0 ? presentToday : null, icon: <UserCheck className="h-4 w-4" />, dot: "P" },
+    { label: "Absent today", value: ti >= 0 ? absentToday : null, icon: <UserX className="h-4 w-4" />, dot: "AB", sub: ti >= 0 ? `${halfToday} on half day` : undefined },
+    { label: "Attendance this month", value: pct, pct: true, icon: <TrendingUp className="h-4 w-4" />, dot: null },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {items.map((it, i) => (
-        <div key={it.label} style={{ animationDelay: `${i * 70}ms` }}
-          className="group animate-fade-up rounded-2xl border bg-card p-5 shadow-soft transition duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-black/5">
+        <div key={it.label} style={{ animationDelay: `${i * 60}ms` }}
+          className="group relative animate-fade-up overflow-hidden rounded-xl border bg-card p-4 shadow-soft transition duration-300 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-pop">
           <div className="flex items-center justify-between">
-            <p className="text-[13px] text-muted">{it.label}</p>
-            <div className="rounded-lg border bg-subtle p-1.5 text-fg/70 transition duration-300 group-hover:rotate-6 group-hover:bg-fg group-hover:text-white">{it.icon}</div>
+            <p className="flex items-center gap-1.5 text-[13px] font-medium text-muted">
+              {it.dot && <span className={cn("h-1.5 w-1.5 rounded-full", `dot-${it.dot}`)} />}{it.label}
+            </p>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-subtle text-fg-2 transition duration-300 group-hover:rotate-6 group-hover:scale-110">{it.icon}</div>
           </div>
-          <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight">
+          <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">
             {it.value === null ? "—" : <CountUp value={it.value} decimals={it.pct ? 1 : 0} suffix={it.pct ? "%" : ""} />}
           </p>
           {it.sub && <p className="mt-0.5 text-xs text-muted">{it.sub}</p>}
           {it.pct && (
-            <div className="mt-3 h-1 overflow-hidden rounded-full bg-subtle">
-              <div className="h-full rounded-full bg-fg transition-[width] duration-1000 ease-out" style={{ width: barReady ? `${pct ?? 0}%` : "0%" }} />
+            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-subtle">
+              <div className="h-full rounded-full bg-[var(--st-p-fg)] transition-[width] duration-1000 ease-out" style={{ width: barReady ? `${pct ?? 0}%` : "0%" }} />
             </div>
           )}
         </div>
@@ -780,9 +820,9 @@ const STATUS_BUTTONS = [
   { code: "AB", label: "Absent" },
 ] as const;
 
-function DayMarker({ rows, days, defs, canEdit, onSet, onRemove }: {
+function DayMarker({ rows, days, defs, canEdit, onSet, onRemove, onEdit }: {
   rows: GridRow[]; days: GridDay[]; defs: Map<string, StatusDef>; canEdit: boolean;
-  onSet: (r: number, c: number, status: string, reason?: string) => void; onRemove: (row: GridRow) => void;
+  onSet: (r: number, c: number, status: string, reason?: string) => void; onRemove: (row: GridRow) => void; onEdit: (row: GridRow) => void;
 }) {
   const todayIdx = days.findIndex((d) => d.today);
   const [c, setC] = useState(todayIdx >= 0 ? todayIdx : 0);
@@ -803,77 +843,81 @@ function DayMarker({ rows, days, defs, canEdit, onSet, onRemove }: {
   const go = (i: number) => { setAsking(null); setC(Math.max(0, Math.min(days.length - 1, i))); };
 
   return (
-    <Card className="mt-6 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Mark attendance</h2>
-          <p key={day.date} className="animate-fade-up text-sm text-muted">
-            {formatDate(day.date, "long")}
-            {day.today && <span className="ml-2 rounded-full bg-fg px-2 py-0.5 text-[11px] font-medium text-white">Today</span>}
-            {day.future && <span className="ml-2 rounded-full border px-2 py-0.5 text-[11px] font-medium">Upcoming</span>}
-          </p>
+    <Card className="mt-5 animate-fade-up overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="text-[15px] font-semibold">Mark attendance</h2>
+            <p key={day.date} className="animate-fade-in text-[13px] text-muted">
+              {formatDate(day.date, "long")}
+              {day.today && <span className="ml-2 rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-fg">Today</span>}
+              {day.future && <span className="ml-2 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">Upcoming</span>}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {!off && (
             <div className="hidden items-center gap-1.5 text-xs font-medium sm:flex">
-              <span key={`p${p}`} className="animate-pop rounded-full border bg-card px-2.5 py-1">{p} Present</span>
-              <span key={`h${h}`} className="animate-pop rounded-full bg-zinc-400 px-2.5 py-1 text-white">{h} Half day</span>
-              <span key={`a${a}`} className="animate-pop rounded-full bg-fg px-2.5 py-1 text-white">{a} Absent</span>
+              <span key={`p${p}`} className="st st-P animate-pop rounded-md px-2 py-0.5">{p} present</span>
+              <span key={`h${h}`} className="st st-HD animate-pop rounded-md px-2 py-0.5">{h} half day</span>
+              <span key={`a${a}`} className="st st-AB animate-pop rounded-md px-2 py-0.5">{a} absent</span>
             </div>
           )}
-          <div className="flex items-center gap-0.5 rounded-xl border bg-card p-1 shadow-sm">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => go(idx - 1)} aria-label="Previous day"><ChevronLeft className="h-4 w-4" /></Button>
-            <Select value={idx} onChange={(e) => go(Number(e.target.value))} className="h-8 w-36 border-0 bg-transparent text-sm font-medium focus:ring-0" aria-label="Day">
-              {days.map((d, i) => <option key={d.date} value={i}>{d.day} {MONTHS[parseISO(d.date).month - 1].slice(0, 3)}, {WEEKDAYS_SHORT[d.weekday]}</option>)}
+          <div className="flex h-8 items-center rounded-lg border border-border-strong bg-card shadow-soft">
+            <button onClick={() => go(idx - 1)} aria-label="Previous day" className="flex h-full w-7 items-center justify-center rounded-l-lg text-muted transition hover:bg-subtle hover:text-fg active:scale-90"><ChevronLeft className="h-4 w-4" /></button>
+            <Select value={idx} onChange={(e) => go(Number(e.target.value))} className="h-full w-[148px] rounded-none border-0 border-x bg-transparent pr-7 text-[13px] font-medium shadow-none focus:ring-0" aria-label="Day">
+              {days.map((d, i) => <option key={d.date} value={i}>{WEEKDAYS_SHORT[d.weekday]}, {d.day} {MONTHS[parseISO(d.date).month - 1].slice(0, 3)}</option>)}
             </Select>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => go(idx + 1)} aria-label="Next day"><ChevronRight className="h-4 w-4" /></Button>
-            {todayIdx >= 0 && idx !== todayIdx && <Button variant="ghost" size="sm" className="h-8 rounded-lg" onClick={() => go(todayIdx)}>Today</Button>}
+            <button onClick={() => go(idx + 1)} aria-label="Next day" className="flex h-full w-7 items-center justify-center rounded-r-lg text-muted transition hover:bg-subtle hover:text-fg active:scale-90"><ChevronRight className="h-4 w-4" /></button>
           </div>
+          {todayIdx >= 0 && idx !== todayIdx && <Button variant="outline" size="sm" className="animate-scale-in" onClick={() => go(todayIdx)}>Today</Button>}
         </div>
       </div>
 
       {holiday && (
-        <div className="flex animate-slide-down items-center gap-2 border-b bg-subtle px-5 py-2.5 text-sm">
-          <PartyPopper className="h-4 w-4" /> <span><b>{day.holiday}</b> — public holiday. Everyone is marked <b>H</b> and counted as present.</span>
+        <div className="flex animate-slide-down items-center gap-2 border-b bg-[var(--st-h-bg)] px-4 py-2 text-[13px] text-[var(--st-h-fg)]">
+          <PartyPopper className="h-4 w-4" /> <span><b>{day.holiday}</b> — public holiday. Everyone is marked H and counted as present.</span>
         </div>
       )}
-      {off && <div className="animate-slide-down border-b bg-subtle px-5 py-2.5 text-sm text-muted">Sunday — weekly off. Nothing to mark.</div>}
+      {off && <div className="animate-slide-down border-b bg-subtle px-4 py-2 text-[13px] text-muted">Sunday — weekly off. Nothing to mark.</div>}
 
-      <div key={day.date} className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div key={day.date} className="grid gap-2.5 p-3 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((row, r) => {
           const cell = row.cells[idx];
           const na = cell.def === "NA";
           const disabled = !canEdit || off || holiday || na;
           const reasoned = REASON_CODES.includes(cell.status);
           return (
-            <div key={row.id} style={{ animationDelay: `${Math.min(r, 20) * 30}ms` }}
-              className={cn("group/card relative animate-fade-up rounded-2xl border p-3 transition duration-300",
-                cell.status === ABSENT_CODE ? "border-zinc-900 bg-zinc-50 shadow-sm" : cell.status === HALF_DAY_CODE ? "border-zinc-400 bg-zinc-50/60" : "bg-card hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-black/5")}>
-              <div className="flex items-center gap-3">
+            <div key={row.id} style={{ animationDelay: `${Math.min(r, 20) * 25}ms` }}
+              className={cn("group/card relative animate-fade-up rounded-lg border bg-card p-2.5 pl-3 transition duration-300 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-pop",
+                (cell.status === ABSENT_CODE || cell.status === HALF_DAY_CODE) && "border-l-[3px]",
+                cell.status === ABSENT_CODE && "border-l-[var(--st-ab-fg)]", cell.status === HALF_DAY_CODE && "border-l-[var(--st-hd-fg)]")}>
+              <div className="flex items-center gap-2.5">
                 <Avatar name={row.name} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{row.name}</p>
+                  <p className="truncate text-[13px] font-medium text-fg">{row.name}</p>
                   <p className="truncate text-xs text-muted">
-                    <span className="font-mono">{row.empCode}</span>
-                    {reasoned && <span className="text-fg"> · {cell.remarks || "No reason"}</span>}
+                    <span className="font-mono text-[11px]">{row.empCode}</span>
+                    {reasoned && <span key={cell.remarks ?? ""} className="animate-fade-in text-fg-2"> · {cell.remarks || "No reason"}{isExam(cell.remarks) && <span className="text-[var(--st-p-fg)]"> · paid</span>}</span>}
                     {na && " · not joined yet"}
                   </p>
                 </div>
                 {holiday && !na ? (
-                  <span className="rounded-full bg-zinc-200 px-3.5 py-1.5 text-sm font-semibold">H</span>
+                  <span className="st st-H rounded-md px-2.5 py-1 text-xs font-semibold">H</span>
                 ) : (
-                  <div className={cn("flex shrink-0 rounded-full border bg-subtle p-0.5", disabled && "opacity-40")}>
+                  <div className={cn("flex shrink-0 gap-0.5 rounded-lg border bg-subtle p-0.5", disabled && "opacity-40")}>
                     {STATUS_BUTTONS.map((b) => {
                       const active = cell.status === b.code && !na;
                       return (
                         <button key={b.code} disabled={disabled} title={b.label}
-                          onClick={() => {
+                          onClick={(e) => {
+                            addRipple(e);
                             if (REASON_CODES.includes(b.code)) setAsking(asking?.r === r && asking.code === b.code ? null : { r, code: b.code });
                             else { setAsking(null); if (cell.status !== b.code) onSet(r, idx, b.code); }
                           }}
-                          className={cn("relative h-8 min-w-11 rounded-full px-2.5 text-[13px] font-semibold transition-all duration-200 active:scale-90 disabled:cursor-not-allowed",
-                            active ? (b.code === "HD" ? "bg-zinc-400 text-white shadow-sm" : "bg-fg text-white shadow-md shadow-black/20") : "text-muted hover:bg-card hover:text-fg")}>
-                          <span key={active ? "on" : "off"} className={cn("inline-block", active && "animate-pop")}>{b.code}</span>
+                          className={cn("relative h-7 min-w-9 overflow-hidden rounded-md px-2 text-xs font-semibold transition-all duration-200 active:scale-90 disabled:cursor-not-allowed",
+                            active ? `st st-${b.code} shadow-sm` : "text-muted hover:bg-card hover:text-fg")}>
+                          <span key={active ? "on" : "off"} className={cn("relative inline-block", active && "animate-pop")}>{b.code}</span>
                         </button>
                       );
                     })}
@@ -881,13 +925,15 @@ function DayMarker({ rows, days, defs, canEdit, onSet, onRemove }: {
                 )}
               </div>
               {canEdit && (
-                <button onClick={() => onRemove(row)} title={`Remove ${row.name}`} aria-label={`Remove ${row.name}`}
-                  className="absolute -right-2 -top-2 flex h-6 w-6 scale-75 items-center justify-center rounded-full border bg-card text-muted opacity-0 shadow-sm transition duration-200 hover:bg-fg hover:text-white group-hover/card:scale-100 group-hover/card:opacity-100 focus:scale-100 focus:opacity-100">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <div className="absolute -right-2 -top-2 flex scale-75 gap-1 opacity-0 transition duration-200 group-hover/card:scale-100 group-hover/card:opacity-100">
+                  <button onClick={() => onEdit(row)} title={`Edit ${row.name}`} aria-label={`Edit ${row.name}`}
+                    className="flex h-6 w-6 items-center justify-center rounded-full border bg-raised text-muted shadow-sm transition hover:bg-primary hover:text-primary-fg focus:opacity-100"><Pencil className="h-3 w-3" /></button>
+                  <button onClick={() => onRemove(row)} title={`Remove ${row.name}`} aria-label={`Remove ${row.name}`}
+                    className="flex h-6 w-6 items-center justify-center rounded-full border bg-raised text-muted shadow-sm transition hover:bg-danger hover:text-white focus:opacity-100"><X className="h-3.5 w-3.5" /></button>
+                </div>
               )}
               {asking?.r === r && (
-                <div className="mt-3 animate-slide-down border-t pt-3">
+                <div className="mt-2.5 animate-slide-down border-t pt-2.5">
                   <ReasonForm code={asking.code} initial={cell.status === asking.code ? cell.remarks : ""} onBack={() => setAsking(null)}
                     onSubmit={(reason) => { onSet(r, idx, asking.code, reason); setAsking(null); }} />
                 </div>
@@ -929,7 +975,7 @@ function AddEmployeeDialog({ open, onClose, onAdded }: { open: boolean; onClose:
         <Field label="Joining date" hint="Attendance can be marked from this date onwards." error={error ?? undefined}>
           <Input type="date" value={doj} onChange={(e) => setDoj(e.target.value)} required />
         </Field>
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" loading={busy}><UserPlus className="h-4 w-4" />Add employee</Button>
         </div>
@@ -938,10 +984,52 @@ function AddEmployeeDialog({ open, onClose, onAdded }: { open: boolean; onClose:
   );
 }
 
+function EditEmployeeDialog({ row, onClose, onSaved }: { row: GridRow | null; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState("");
+  const [doj, setDoj] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!row) return;
+    setName(row.name);
+    setError(null);
+    api<{ dateOfJoining: string }>(`/api/employees/${row.id}`).then((e) => setDoj(e.dateOfJoining)).catch(() => setDoj(""));
+  }, [row]);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!row) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/employees/${row.id}`, { method: "PUT", body: { name: name.trim(), dateOfJoining: doj } });
+      toast.success("Employee updated");
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={!!row} onClose={onClose} title={`Edit ${row?.empCode ?? ""}`}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Full name"><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>
+        <Field label="Joining date" hint="Days before this date are not counted." error={error ?? undefined}>
+          <Input type="date" value={doj} onChange={(e) => setDoj(e.target.value)} required />
+        </Field>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={busy}>Save changes</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 function SaveIndicator({ pending, state }: { pending: number; state: "idle" | "saved" | "error" }) {
-  if (pending > 0) return <span className="inline-flex items-center gap-1.5 text-xs text-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</span>;
-  if (state === "saved") return <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"><Check className="h-3.5 w-3.5" />Saved</span>;
-  if (state === "error") return <span className="inline-flex items-center gap-1.5 text-xs text-danger"><AlertCircle className="h-3.5 w-3.5" />Not saved</span>;
+  if (pending > 0) return <span className="inline-flex animate-fade-in items-center gap-1.5 px-1 text-xs text-muted"><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</span>;
+  if (state === "saved") return <span key={Date.now()} className="inline-flex animate-fade-in items-center gap-1.5 px-1 text-xs text-[var(--st-p-fg)]"><Check className="h-3.5 w-3.5" />Saved</span>;
+  if (state === "error") return <span className="inline-flex items-center gap-1.5 px-1 text-xs text-danger"><AlertCircle className="h-3.5 w-3.5" />Not saved</span>;
   return null;
 }
 
@@ -961,11 +1049,11 @@ function ExportMenu({ year, month, department }: { year: number; month: number; 
   };
   return (
     <div className="relative">
-      <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)} loading={busy}><Download className="h-3.5 w-3.5" />Export</Button>
+      <Button variant="outline" onClick={() => setOpen((o) => !o)} loading={busy}><Download className="h-4 w-4" />Export</Button>
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-44 rounded-2xl border bg-card p-1 shadow-xl">
+        <div className="absolute right-0 z-40 mt-1.5 w-44 animate-scale-in rounded-lg border bg-raised p-1 shadow-pop" style={{ transformOrigin: "top right" }}>
           {(LOCAL_MODE ? [["csv", "Excel / CSV"]] : [["xlsx", "Excel (.xlsx)"], ["pdf", "PDF (A4)"], ["csv", "CSV"]]).map(([f, l]) => (
-            <button key={f} onClick={() => run(f)} className="block w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-subtle">{l}</button>
+            <button key={f} onClick={() => run(f)} className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] hover:bg-subtle">{l}</button>
           ))}
         </div>
       )}
@@ -975,9 +1063,9 @@ function ExportMenu({ year, month, department }: { year: number; month: number; 
 
 function GridSkeleton() {
   return (
-    <Card className="space-y-2 p-4">
-      <Skeleton className="h-9 w-full" />
-      {Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-8 w-full" />)}
-    </Card>
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-[104px]" />)}</div>
+      <Card className="space-y-2 p-3">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)}</Card>
+    </div>
   );
 }
