@@ -24,9 +24,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: bash scripts/build-pages.sh
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}
+      - name: Build static site
+        run: |
+          # <owner>.github.io repos are served from the domain root; others from /<repo>
+          if [[ "${{ github.event.repository.name }}" == *.github.io ]]; then export BASE_PATH=""; else export BASE_PATH="/${{ github.event.repository.name }}"; fi
+          bash scripts/build-pages.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out
