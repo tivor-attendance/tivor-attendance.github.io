@@ -59,7 +59,7 @@ export function sendResetLink(): Promise<string | null> {
 
 /** Online mode: set the new passkey with the token from the reset link. */
 export function setPasskeyFromLink(token: string, newPasskey: string): Promise<string | null> {
-  if (!/^\d{6,20}$/.test(newPasskey.trim())) return Promise.resolve("Passkey must be 6–20 digits");
+  if (newPasskey.trim().length < 6) return Promise.resolve("Passkey must be at least 6 characters");
   return cloudSetPassword(token, newPasskey.trim());
 }
 
@@ -181,7 +181,7 @@ export async function verifyResetCode(code: string): Promise<string | null> {
 export async function setNewPasskey(newPasskey: string): Promise<string | null> {
   const s = otpState();
   if (!s?.verified || Date.now() > s.expires) return "Your code has expired. Start again.";
-  if (!/^\d{6,20}$/.test(newPasskey.trim())) return "Passkey must be 6–20 digits";
+  if (newPasskey.trim().length < 6) return "Passkey must be at least 6 characters";
   if (!write(PASSKEY_KEY, await sha256(newPasskey.trim()))) return "Could not save — browser storage is blocked";
   remove(OTP_KEY);
   remove(SESSION_KEY);

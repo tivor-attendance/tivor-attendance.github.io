@@ -14,7 +14,7 @@ const HEADINGS: Record<Step, [string, string]> = {
   send: ["Forgot passkey?", CLOUD_ENABLED ? "We'll email a reset link to the admin" : "We'll email a 6-digit code to the admin"],
   sent: ["Check your email", `Open the reset link sent to ${RESET_EMAIL_MASKED}`],
   code: ["Check your email", `Enter the 6-digit code sent to ${RESET_EMAIL_MASKED}`],
-  new: ["Set a new passkey", "Choose a passkey of 6–20 digits"],
+  new: ["Set a new passkey", "Choose a passkey of at least 6 characters"],
 };
 
 export default function LoginPage() {
@@ -173,7 +173,7 @@ export default function LoginPage() {
                 <span className="text-xs font-medium text-muted">Admin passkey</span>
                 <div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-                  <input type="password" inputMode="numeric" autoComplete="current-password" autoFocus value={passkey}
+                  <input type="password" autoComplete="current-password" autoFocus value={passkey}
                     onChange={(e) => { setPasskey(e.target.value); setError(null); }}
                     className="h-10 w-full rounded-lg border border-border-strong bg-card pl-10 pr-3 text-sm tracking-[0.3em] shadow-soft outline-none transition focus:border-fg/40 focus:ring-4 focus:ring-[var(--ring)]"
                     placeholder="••••••••••" />
@@ -245,8 +245,8 @@ export default function LoginPage() {
           {step === "new" && (
             <form onSubmit={saveNew} className="space-y-4 animate-fade-in" key="new">
               <p className="st st-P flex items-center gap-2 rounded-lg px-3 py-2 text-[13px]"><ShieldCheck className="h-4 w-4" />{recoveryToken ? "Reset link verified" : "Code verified"}</p>
-              <Field label="New passkey (6–20 digits)"><input type="password" inputMode="numeric" autoFocus value={newKey} onChange={(e) => setNewKey(e.target.value)} className={inputCls} /></Field>
-              <Field label="Confirm new passkey"><input type="password" inputMode="numeric" value={confirmKey} onChange={(e) => setConfirmKey(e.target.value)} className={inputCls} /></Field>
+              <Field label="New passkey (at least 6 characters)"><input type="password" autoFocus value={newKey} onChange={(e) => setNewKey(e.target.value)} className={inputCls} /></Field>
+              <Field label="Confirm new passkey"><input type="password" value={confirmKey} onChange={(e) => setConfirmKey(e.target.value)} className={inputCls} /></Field>
               {error && <p className="animate-slide-down st st-AB rounded-lg px-3 py-2 text-[13px]">{error}</p>}
               <PrimaryButton disabled={busy || !newKey || !confirmKey} busy={busy}>Save new passkey</PrimaryButton>
             </form>
